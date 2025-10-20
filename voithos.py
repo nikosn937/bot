@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
-from io import StringIO # Για να διαβάσουμε το string ως CSV
-from unidecode import unidecode 
+from io import StringIO
+# ΔΕΝ ΧΡΕΙΑΖΕΤΑΙ ΠΛΕΟΝ: from unidecode import unidecode 
 
 # --------------------------------------------------------------------------------
-# 1. ΕΝΣΩΜΑΤΩΜΕΝΑ ΔΕΔΟΜΕΝΑ (DATA SOURCE)
+# 1. ΕΝΣΩΜΑΤΩΜΕΝΟ DATA SOURCE
 # --------------------------------------------------------------------------------
 
-# Τα δεδομένα ως multiline string. Αυτό εξαλείφει σφάλματα κωδικοποίησης/ανάγνωσης αρχείου.
 CSV_DATA = """Keyword,Response
 Μαθηματικά,"Εργασία Μαθηματικών: Άσκηση 33, σελίδα 45. Προθεσμία: Παρασκευή."
 Φυσική,"Διαγώνισμα Φυσικής την Τρίτη 25/10. Ύλη: Ενότητες 1 & 2."
@@ -24,33 +23,39 @@ CSV_DATA = """Keyword,Response
 """
 
 # --------------------------------------------------------------------------------
-# 2. ΒΟΗΘΗΤΙΚΕΣ ΣΥΝΑΡΤΗΣΕΙΣ
+# 2. ΒΟΗΘΗΤΙΚΗ ΣΥΝΑΡΤΗΣΗ (ΧΩΡΙΣ unidecode)
 # --------------------------------------------------------------------------------
 
+# Χρησιμοποιούμε απλή μέθοδο αντικατάστασης τόνων, η οποία είναι ενσωματωμένη.
+TONES_MAP = str.maketrans("άέήίόύώ", "αεηιουω")
+
 def normalize_keyword(keyword):
-    """Μετατρέπει τη λέξη-κλειδί σε πεζά και αφαιρεί τους τόνους."""
+    """Μετατρέπει τη λέξη-κλειδί σε πεζά και αφαιρεί τους τόνους με ενσωματωμένη μέθοδο."""
     if pd.isna(keyword):
         return ''
-    return unidecode(str(keyword).lower().strip())
+    # 1. Μετατροπή σε πεζά
+    normalized = str(keyword).lower().strip()
+    # 2. Αφαίρεση τόνων (π.χ. 'φυσική' -> 'φυσικη')
+    return normalized.translate(TONES_MAP)
+
 
 # --------------------------------------------------------------------------------
 # 3. ΦΟΡΤΩΣΗ ΚΑΙ ΕΠΕΞΕΡΓΑΣΙΑ ΔΕΔΟΜΕΝΩΝ
 # --------------------------------------------------------------------------------
 
 try:
-    # Χρησιμοποιούμε StringIO για να διαβάσουμε το string ως CSV
     df = pd.read_csv(StringIO(CSV_DATA))
     
-    # Καθαρισμός των ονομάτων των στηλών
     df.columns = df.columns.str.strip()
     
-    # Δημιουργούμε τη στήλη για εσωτερική σύγκριση
+    if 'Keyword' not in df.columns or 'Response' not in df.columns:
+        raise ValueError("Σφάλμα: Λείπουν οι επικεφαλίδες 'Keyword' ή 'Response'.")
+    
+    # Δημιουργούμε τη στήλη για εσωτερική σύγκριση (εδώ γίνεται η αφαίρεση τόνων)
     df['Normalized_Keyword'] = df['Keyword'].apply(normalize_keyword)
     
-    # Μετατροπή σε λεξικό για γρήγορη αναζήτηση
     data_source_dict = df.set_index('Normalized_Keyword')['Response'].to_dict()
     
-    # Λίστα για εμφάνιση
     available_keys_display = sorted(df['Keyword'].unique())
     
 except Exception as e:
@@ -59,7 +64,7 @@ except Exception as e:
     available_keys_display = []
 
 # --------------------------------------------------------------------------------
-# 4. ΡΥΘΜΙΣΗ UI / ΛΟΓΙΚΗ
+# 4. UI / ΛΟΓΙΚΗ
 # --------------------------------------------------------------------------------
 
 st.set_page_config(page_title="Βοηθός Τάξης (Τελική Έκδοση)", layout="centered")
@@ -80,20 +85,16 @@ user_input = st.text_input(
 )
 
 if st.button('Αναζήτηση'):
-    # Ομαλοποίηση της εισόδου του χρήστη
     processed_input = normalize_keyword(user_input)
     
     if processed_input in data_source_dict:
-        # Επιτυχία
         bot_response = data_source_dict[processed_input]
         st.success(f"**Απάντηση:** {bot_response}")
         
-        # Καθαρισμός και επανεκκίνηση
         st.session_state.search_query = ""
         st.rerun() 
         
     else:
-        # Αποτυχία
         st.warning(
             f"Δεν βρέθηκε απάντηση για το: '{user_input}'. Δοκίμασε μία από τις διαθέσιμες λέξεις-κλειδιά: **{', '.join(available_keys_display)}**."
         )
