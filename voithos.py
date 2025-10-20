@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from io import StringIO
-# ΔΕΝ ΧΡΕΙΑΖΕΤΑΙ ΠΛΕΟΝ: from unidecode import unidecode 
+# Εδώ δεν χρειάζεται η unidecode
 
 # --------------------------------------------------------------------------------
 # 1. ΕΝΣΩΜΑΤΩΜΕΝΟ DATA SOURCE
@@ -26,16 +26,14 @@ CSV_DATA = """Keyword,Response
 # 2. ΒΟΗΘΗΤΙΚΗ ΣΥΝΑΡΤΗΣΗ (ΧΩΡΙΣ unidecode)
 # --------------------------------------------------------------------------------
 
-# Χρησιμοποιούμε απλή μέθοδο αντικατάστασης τόνων, η οποία είναι ενσωματωμένη.
 TONES_MAP = str.maketrans("άέήίόύώ", "αεηιουω")
 
 def normalize_keyword(keyword):
     """Μετατρέπει τη λέξη-κλειδί σε πεζά και αφαιρεί τους τόνους με ενσωματωμένη μέθοδο."""
     if pd.isna(keyword):
         return ''
-    # 1. Μετατροπή σε πεζά
     normalized = str(keyword).lower().strip()
-    # 2. Αφαίρεση τόνων (π.χ. 'φυσική' -> 'φυσικη')
+    # Εφαρμόζει την αφαίρεση τόνων
     return normalized.translate(TONES_MAP)
 
 
@@ -51,7 +49,6 @@ try:
     if 'Keyword' not in df.columns or 'Response' not in df.columns:
         raise ValueError("Σφάλμα: Λείπουν οι επικεφαλίδες 'Keyword' ή 'Response'.")
     
-    # Δημιουργούμε τη στήλη για εσωτερική σύγκριση (εδώ γίνεται η αφαίρεση τόνων)
     df['Normalized_Keyword'] = df['Keyword'].apply(normalize_keyword)
     
     data_source_dict = df.set_index('Normalized_Keyword')['Response'].to_dict()
@@ -59,7 +56,7 @@ try:
     available_keys_display = sorted(df['Keyword'].unique())
     
 except Exception as e:
-    st.error(f"Κρίσιμο Σφάλμα Δομής: {e}")
+    st.error(f"Κρίσιμο Σφάλμα Φόρτωσης: Η εφαρμογή δεν μπορεί να ξεκινήσει. Παρακαλώ ελέγξτε το αρχείο σας. Λεπτομέρειες: {e}")
     data_source_dict = {}
     available_keys_display = []
 
@@ -74,30 +71,30 @@ st.markdown("---")
 info_message = f"Γεια! Είμαι ο βοηθός σου. Δοκίμασε μία από τις λέξεις-κλειδιά: **{', '.join(available_keys_display)}**"
 st.info(info_message)
 
-if 'search_query' not in st.session_state:
-    st.session_state.search_query = ""
-
+# Το input δεν χρειάζεται πλέον session_state
 user_input = st.text_input(
     'Τι θέλεις να μάθεις;', 
-    placeholder='Πληκτρολόγησε π.χ. Μαθηματικά, Εκδρομή...',
-    key='main_input',
-    value=st.session_state.search_query
+    placeholder='Πληκτρολόγησε π.χ. Μαθηματικά, Εκδρομή...'
 )
 
-if st.button('Αναζήτηση'):
-    processed_input = normalize_keyword(user_input)
+if st.button('Αναζήτηση') or user_input: # Ελέγχουμε αν υπάρχει είσοδος
     
-    if processed_input in data_source_dict:
-        bot_response = data_source_dict[processed_input]
-        st.success(f"**Απάντηση:** {bot_response}")
+    if user_input: # Επιβεβαιώνουμε ότι ο χρήστης έχει πληκτρολογήσει κάτι
+        processed_input = normalize_keyword(user_input)
         
-        st.session_state.search_query = ""
-        st.rerun() 
-        
-    else:
-        st.warning(
-            f"Δεν βρέθηκε απάντηση για το: '{user_input}'. Δοκίμασε μία από τις διαθέσιμες λέξεις-κλειδιά: **{', '.join(available_keys_display)}**."
-        )
+        if processed_input in data_source_dict:
+            # Επιτυχία
+            bot_response = data_source_dict[processed_input]
+            st.success(f"**Απάντηση:** {bot_response}")
+            
+            # ΔΕΝ ΕΙΝΑΙ ΠΛΕΟΝ ΕΔΩ: st.session_state.search_query = ""
+            # ΔΕΝ ΕΙΝΑΙ ΠΛΕΟΝ ΕΔΩ: st.rerun()
+            
+        else:
+            # Αποτυχία
+            st.warning(
+                f"Δεν βρέθηκε απάντηση για το: '{user_input}'. Δοκίμασε μία από τις διαθέσιμες λέξεις-κλειδιά: **{', '.join(available_keys_display)}**."
+            )
 
 st.markdown("---")
 st.caption("Η εφαρμογή χρησιμοποιεί Python/Streamlit με ενσωματωμένα δεδομένα.")
