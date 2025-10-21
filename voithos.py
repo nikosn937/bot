@@ -1,14 +1,32 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection # Χρησιμοποιούμε τη native Streamlit λύση
+import gspread # Η βασική βιβλιοθήκη
+from gspread_dataframe import set_with_dataframe, get_dataframe # Χρησιμοποιούμε το αρχικό import
 from datetime import datetime
 
 # --------------------------------------------------------------------------------
 # 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS)
 # --------------------------------------------------------------------------------
 
-# ΑΝΤΙΣΤΡΕΦΟΥΜΕ ΣΤΗΝ GSheetsConnection για να αποφύγουμε τα ImportErrors
-conn = st.connection("gsheets", type=GSheetsConnection) 
+# Χρησιμοποιεί τα secrets για να συνδεθεί με το Google Service Account
+@st.cache_resource
+def get_gspread_client():
+    """Δημιουργεί και επιστρέφει τον gspread client."""
+    try:
+        # Δημιουργία dictionary από τα secrets
+        service_account_info = dict(st.secrets["gcp_service_account"])
+        
+        # Αντικαθιστούμε τα \n στο private_key για να το διαβάσει σωστά το gspread
+        service_account_info['private_key'] = service_account_info['private_key'].replace('\\n', '\n')
+        
+        # Σύνδεση με το Google Sheets API
+        gc = gspread.service_account_from_dict(service_account_info)
+        return gc
+    except Exception as e:
+        st.error(f"Σφάλμα σύνδεσης gspread. Ελέγξτε τα secrets.toml και τα δικαιώματα. Λεπτομέρειες: {e}")
+        return None
+
+gc = get_gspread_client()
 SHEET_NAME = st.secrets["sheet_name"] 
 DATE_FORMAT = '%d/%m/%Y'
 
@@ -32,10 +50,17 @@ def get_tags_from_keyword(keyword):
 @st.cache_data(ttl=600)
 def load_data():
     """Φορτώνει, καθαρίζει και ταξινομεί δεδομένα από το Google Sheet."""
-    
+    if gc is None:
+        return {}, {}, []
+
     try:
-        # Χρησιμοποιούμε τη μέθοδο του Streamlit Connector
-        df = conn.read(spreadsheet=SHEET_NAME, ttl=5)
+        # Άνοιγμα του Google Sheet και του πρώτου φύλλου (worksheet)
+        sh = gc.open(SHEET_NAME)
+        ws = sh.get_worksheet(0)
+        
+        # Ανάγνωση σε DataFrame
+        df = get_dataframe(ws, header=1) 
+        df.columns = df.columns.str.strip()
         
         required_cols = ['Keyword', 'Info', 'URL', 'Type', 'Date']
         if not all(col in df.columns for col in required_cols):
@@ -65,8 +90,11 @@ def load_data():
                 
         return tag_to_keyword_map, keyword_to_data_map, sorted(unique_keywords)
     
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error(f"Σφάλμα: Δεν βρέθηκε το Google Sheet με όνομα: '{SHEET_NAME}'. Ελέγξτε το όνομα στα secrets.")
+        return {}, {}, []
     except Exception as e:
-        st.error(f"Σφάλμα φόρτωσης/επεξεργασίας δεδομένων. Λεπτομέρειες: {e}")
+        st.error(f"Σφάλμα φόρτωσης/επεξεργασίας δεδομένων. Ελέγξτε τις επικεφαλίδες. Λεπτομέρειες: {e}")
         return {}, {}, []
 
 # --------------------------------------------------------------------------------
@@ -74,20 +102,17 @@ def load_data():
 # --------------------------------------------------------------------------------
 
 def submit_entry(new_entry_list):
-    """Προσθέτει μια νέα σειρά στο Google Sheet χρησιμοποιώντας Streamlit Connection."""
+    """Προσθέτει μια νέα σειρά στο Google Sheet χρησιμοποιώντας gspread."""
+    if gc is None:
+        st.error("Η σύνδεση με το Google Sheets απέτυχε.")
+        return
 
     try:
-        # Φόρτωση του υπάρχοντος DataFrame (πρέπει να το κάνουμε για να προσθέσουμε)
-        current_df = conn.read(spreadsheet=SHEET_NAME)
+        sh = gc.open(SHEET_NAME)
+        ws = sh.get_worksheet(0)
         
-        # Δημιουργία DataFrame με τη νέα καταχώρηση
-        new_row = pd.DataFrame([new_entry_list], columns=current_df.columns)
-        
-        # Συγχώνευση του νέου DataFrame με το υπάρχον
-        updated_df = pd.concat([current_df, new_row], ignore_index=True)
-        
-        # Γράψιμο πίσω στο Google Sheet
-        conn.write(df=updated_df, spreadsheet=SHEET_NAME)
+        # Προσθήκη νέας σειράς (χρησιμοποιούμε τη λίστα τιμών)
+        ws.append_row(new_entry_list)
         
         st.cache_data.clear() 
         st.success("🎉 Η καταχώρηση έγινε επιτυχώς! Η εφαρμογή ανανεώνεται...")
@@ -95,12 +120,11 @@ def submit_entry(new_entry_list):
         st.rerun() 
         
     except Exception as e:
-        st.error(f"Σφάλμα κατά την καταχώρηση. Ελέγξτε τα secrets.toml και τα δικαιώματα. Λεπτομέρειες: {e}")
+        st.error(f"Σφάλμα κατά την καταχώρηση. Ελέγξτε τα δικαιώματα. Λεπτομέρειες: {e}")
 
 def data_entry_form():
     """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων."""
     
-    # Ο υπόλοιπος κώδικας της φόρμας παραμένει ίδιος...
     with st.expander("➕ Νέα Καταχώρηση (Διαχειριστής)"):
         with st.form("new_entry_form", clear_on_submit=True):
             st.markdown("### Εισαγωγή Νέας Πληροφορίας")
@@ -125,13 +149,13 @@ def data_entry_form():
             if submitted:
                 if new_keyword and new_info:
                     # Δημιουργία λίστας τιμών με τη σωστή σειρά για το Sheet (Keyword, Info, URL, Type, Date)
-                    new_entry_list = {
-                        'Keyword': new_keyword.strip(), 
-                        'Info': new_info.strip(), 
-                        'URL': new_url.strip(), 
-                        'Type': new_type, 
-                        'Date': new_date_str # Ημερομηνία σε μορφή string
-                    }
+                    new_entry_list = [
+                        new_keyword.strip(), 
+                        new_info.strip(), 
+                        new_url.strip(), 
+                        new_type, 
+                        new_date_str
+                    ]
                     submit_entry(new_entry_list)
                 else:
                     st.error("Παρακαλώ συμπληρώστε τη Φράση-Κλειδί και την Περιγραφή.")
@@ -140,8 +164,8 @@ def data_entry_form():
 # 3. UI / ΚΥΡΙΑ ΛΟΓΙΚΗ
 # --------------------------------------------------------------------------------
 
-st.set_page_config(page_title="Βοηθός Τάξης (Streamlit Connection)", layout="centered")
-st.title("🤖 Ψηφιακός Βοηθός Τάξης (Streamlit Connection)")
+st.set_page_config(page_title="Βοηθός Τάξης (Google Sheets)", layout="centered")
+st.title("🤖 Ψηφιακός Βοηθός Τάξης (Google Sheets)")
 st.markdown("---")
 
 # Κύριες ενέργειες
@@ -195,4 +219,4 @@ if user_input and keyword_to_data_map:
         st.warning(f"Δεν βρέθηκε απάντηση για το: '{user_input}'.")
 
 st.markdown("---")
-st.caption("Τα δεδομένα διαβάζονται και γράφονται στο Google Sheet μέσω Streamlit GSheets Connection.")
+st.caption("Τα δεδομένα διαβάζονται και γράφονται στο Google Sheet μέσω gspread.")
