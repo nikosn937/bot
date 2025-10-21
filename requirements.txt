@@ -1,5 +1,4 @@
 streamlit
 pandas
 unidecode
-gspread==5.2.0
-gspread-dataframe==3.2.0
+gspread
