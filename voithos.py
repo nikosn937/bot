@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from gspread_dataframe import set_with_dataframe, get_dataframe # Χρησιμοποιείται για εύκολο read/write
+from gspread_dataframe import set_with_dataframe, get_dataframe 
 from datetime import datetime
 
 # --------------------------------------------------------------------------------
@@ -17,13 +17,14 @@ def get_gspread_client():
         service_account_info = dict(st.secrets["gcp_service_account"])
         
         # Αντικαθιστούμε τα \n στο private_key για να το διαβάσει σωστά το gspread
+        # Αυτό διορθώνει τυχόν προβλήματα μορφοποίησης από τα Streamlit secrets.
         service_account_info['private_key'] = service_account_info['private_key'].replace('\\n', '\n')
         
         # Σύνδεση με το Google Sheets API
         gc = gspread.service_account_from_dict(service_account_info)
         return gc
     except Exception as e:
-        st.error(f"Σφάλμα σύνδεσης gspread. Ελέγξτε τα secrets.toml. Λεπτομέρειες: {e}")
+        st.error(f"Σφάλμα σύνδεσης gspread. Ελέγξτε τα secrets.toml και τα δικαιώματα. Λεπτομέρειες: {e}")
         return None
 
 gc = get_gspread_client()
@@ -37,11 +38,13 @@ DATE_FORMAT = '%d/%m/%Y'
 TONES_MAP = str.maketrans("άέήίόύώ", "αεηιουώ")
 
 def normalize_text(text):
+    """Μετατρέπει κείμενο σε πεζά, αφαιρεί τα κενά και τους τόνους."""
     if pd.isna(text): return ''
     normalized = str(text).lower().strip()
     return normalized.translate(TONES_MAP)
 
 def get_tags_from_keyword(keyword):
+    """Διαχωρίζει μια φράση-κλειδί σε μεμονωμένα, ομαλοποιημένα tags."""
     if not keyword or pd.isna(keyword): return []
     return [normalize_text(word) for word in str(keyword).split() if word]
 
@@ -57,6 +60,7 @@ def load_data():
         ws = sh.get_worksheet(0)
         
         # Ανάγνωση σε DataFrame
+        # Χρησιμοποιεί την πρώτη γραμμή (header=1)
         df = get_dataframe(ws, header=1) 
         df.columns = df.columns.str.strip()
         
@@ -92,7 +96,7 @@ def load_data():
         st.error(f"Σφάλμα: Δεν βρέθηκε το Google Sheet με όνομα: '{SHEET_NAME}'. Ελέγξτε το όνομα στα secrets.")
         return {}, {}, []
     except Exception as e:
-        st.error(f"Σφάλμα φόρτωσης/επεξεργασίας δεδομένων: {e}")
+        st.error(f"Σφάλμα φόρτωσης/επεξεργασίας δεδομένων. Ελέγξτε τις επικεφαλίδες. Λεπτομέρειες: {e}")
         return {}, {}, []
 
 # --------------------------------------------------------------------------------
@@ -102,7 +106,7 @@ def load_data():
 def submit_entry(new_entry_list):
     """Προσθέτει μια νέα σειρά στο Google Sheet χρησιμοποιώντας gspread."""
     if gc is None:
-        st.error("Η σύνδεση με το Google Sheets απέτυχε. Ελέγξτε τα secrets.")
+        st.error("Η σύνδεση με το Google Sheets απέτυχε.")
         return
 
     try:
@@ -117,10 +121,8 @@ def submit_entry(new_entry_list):
         st.balloons()
         st.rerun() 
         
-    except gspread.exceptions.WorksheetNotFound:
-        st.error("Δεν βρέθηκε το πρώτο φύλλο εργασίας (Worksheet) στο Google Sheet.")
     except Exception as e:
-        st.error(f"Σφάλμα κατά την καταχώρηση: {e}")
+        st.error(f"Σφάλμα κατά την καταχώρηση. Ελέγξτε τα δικαιώματα. Λεπτομέρειες: {e}")
 
 def data_entry_form():
     """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων."""
@@ -148,7 +150,7 @@ def data_entry_form():
             
             if submitted:
                 if new_keyword and new_info:
-                    # Δημιουργία λίστας τιμών με τη σωστή σειρά για το Sheet
+                    # Δημιουργία λίστας τιμών με τη σωστή σειρά για το Sheet (Keyword, Info, URL, Type, Date)
                     new_entry_list = [
                         new_keyword.strip(), 
                         new_info.strip(), 
@@ -168,8 +170,10 @@ st.set_page_config(page_title="Βοηθός Τάξης (Google Sheets)", layout=
 st.title("🤖 Ψηφιακός Βοηθός Τάξης (Google Sheets)")
 st.markdown("---")
 
+# Κύριες ενέργειες
 tag_to_keyword_map, keyword_to_data_map, available_keys_display = load_data()
 
+# Εμφάνιση Φόρμας Καταχώρησης
 data_entry_form() 
 
 st.markdown("---")
@@ -184,6 +188,7 @@ user_input = st.text_input(
 )
 
 if user_input and keyword_to_data_map:
+    # Λογική αναζήτησης 
     search_tag = normalize_text(user_input)
     matching_keywords = tag_to_keyword_map.get(search_tag, set())
     
