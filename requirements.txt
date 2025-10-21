@@ -1,5 +1,4 @@
 streamlit
 pandas
 unidecode
-gspread
-gspread-dataframe
+streamlit-gsheets
