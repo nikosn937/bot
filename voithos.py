@@ -1,14 +1,33 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from gspread_dataframe import set_with_dataframe, get_dataframe # Χρησιμοποιείται για εύκολο read/write
+from datetime import datetime
 
 # --------------------------------------------------------------------------------
 # 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS)
 # --------------------------------------------------------------------------------
 
-# Δημιουργία σύνδεσης με το Google Sheet (χρησιμοποιεί τα secrets)
-conn = st.connection("gsheets", type=GSheetsConnection)
-SHEET_NAME = st.secrets["sheet_name"] # Διαβάζει το όνομα του sheet από τα secrets
+# Χρησιμοποιεί τα secrets για να συνδεθεί με το Google Service Account
+@st.cache_resource
+def get_gspread_client():
+    """Δημιουργεί και επιστρέφει τον gspread client."""
+    try:
+        # Δημιουργία dictionary από τα secrets (όπως ρυθμίστηκαν στο toml)
+        service_account_info = dict(st.secrets["gcp_service_account"])
+        
+        # Αντικαθιστούμε τα \n στο private_key για να το διαβάσει σωστά το gspread
+        service_account_info['private_key'] = service_account_info['private_key'].replace('\\n', '\n')
+        
+        # Σύνδεση με το Google Sheets API
+        gc = gspread.service_account_from_dict(service_account_info)
+        return gc
+    except Exception as e:
+        st.error(f"Σφάλμα σύνδεσης gspread. Ελέγξτε τα secrets.toml. Λεπτομέρειες: {e}")
+        return None
+
+gc = get_gspread_client()
+SHEET_NAME = st.secrets["sheet_name"] 
 DATE_FORMAT = '%d/%m/%Y'
 
 # --------------------------------------------------------------------------------
@@ -18,36 +37,39 @@ DATE_FORMAT = '%d/%m/%Y'
 TONES_MAP = str.maketrans("άέήίόύώ", "αεηιουώ")
 
 def normalize_text(text):
-    """Μετατρέπει κείμενο σε πεζά, αφαιρεί τα κενά και τους τόνους."""
-    if pd.isna(text):
-        return ''
+    if pd.isna(text): return ''
     normalized = str(text).lower().strip()
     return normalized.translate(TONES_MAP)
 
 def get_tags_from_keyword(keyword):
-    """Διαχωρίζει μια φράση-κλειδί σε μεμονωμένα, ομαλοποιημένα tags."""
-    if not keyword or pd.isna(keyword):
-        return []
+    if not keyword or pd.isna(keyword): return []
     return [normalize_text(word) for word in str(keyword).split() if word]
 
-@st.cache_data(ttl=600) # Κάνει cache τα δεδομένα για 10 λεπτά
+@st.cache_data(ttl=600)
 def load_data():
     """Φορτώνει, καθαρίζει και ταξινομεί δεδομένα από το Google Sheet."""
+    if gc is None:
+        return {}, {}, []
+
     try:
-        # Φόρτωση δεδομένων από το Google Sheet
-        df = conn.read(spreadsheet=SHEET_NAME, ttl=5, usecols=list(range(5)))
+        # Άνοιγμα του Google Sheet και του πρώτου φύλλου (worksheet)
+        sh = gc.open(SHEET_NAME)
+        ws = sh.get_worksheet(0)
+        
+        # Ανάγνωση σε DataFrame
+        df = get_dataframe(ws, header=1) 
         df.columns = df.columns.str.strip()
         
         required_cols = ['Keyword', 'Info', 'URL', 'Type', 'Date']
         if not all(col in df.columns for col in required_cols):
-            st.error(f"Σφάλμα δομής: Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}.")
+            st.error(f"Σφάλμα δομής Sheet: Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}.")
             return {}, {}, []
 
-        # Μετατροπή της στήλης Date
+        # Καθαρισμός/Επεξεργασία δεδομένων
+        df = df.dropna(subset=['Keyword', 'Date'], how='any') 
         df['Date'] = pd.to_datetime(df['Date'], format=DATE_FORMAT, errors='coerce')
-        df = df.dropna(subset=['Date']) # Αφαίρεση γραμμών με λάθος ημερομηνίες
+        df = df.dropna(subset=['Date'])
         
-        # Ταξινόμηση: Πιο πρόσφατη καταχώρηση πρώτη
         df_sorted = df.sort_values(by=['Keyword', 'Date'], ascending=[True, False])
         
         # Δημιουργία χάρτη Tags προς Καταχωρήσεις
@@ -66,30 +88,39 @@ def load_data():
                 
         return tag_to_keyword_map, keyword_to_data_map, sorted(unique_keywords)
     
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error(f"Σφάλμα: Δεν βρέθηκε το Google Sheet με όνομα: '{SHEET_NAME}'. Ελέγξτε το όνομα στα secrets.")
+        return {}, {}, []
     except Exception as e:
-        st.error(f"Κρίσιμο Σφάλμα Φόρτωσης από Google Sheet. Ελέγξτε τα secrets και την κοινή χρήση. Λεπτομέρειες: {e}")
+        st.error(f"Σφάλμα φόρτωσης/επεξεργασίας δεδομένων: {e}")
         return {}, {}, []
 
 # --------------------------------------------------------------------------------
-# 2. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ (ΝΕΑ ΛΕΙΤΟΥΡΓΙΑ)
+# 2. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ
 # --------------------------------------------------------------------------------
 
-def submit_entry(new_entry):
-    """Προσθέτει μια νέα σειρά στο Google Sheet."""
+def submit_entry(new_entry_list):
+    """Προσθέτει μια νέα σειρά στο Google Sheet χρησιμοποιώντας gspread."""
+    if gc is None:
+        st.error("Η σύνδεση με το Google Sheets απέτυχε. Ελέγξτε τα secrets.")
+        return
+
     try:
-        # Προσθήκη νέας σειράς στο Sheet (προστίθεται στο τέλος)
-        conn.append(data=new_entry)
+        sh = gc.open(SHEET_NAME)
+        ws = sh.get_worksheet(0)
         
-        # Καθαρισμός cache για να διαβαστούν τα νέα δεδομένα
+        # Προσθήκη νέας σειράς (χρησιμοποιούμε τη λίστα τιμών)
+        ws.append_row(new_entry_list)
+        
         st.cache_data.clear() 
         st.success("🎉 Η καταχώρηση έγινε επιτυχώς! Η εφαρμογή ανανεώνεται...")
         st.balloons()
-        
-        # Αναγκαστική επανεκκίνηση για εμφάνιση των νέων δεδομένων
         st.rerun() 
         
+    except gspread.exceptions.WorksheetNotFound:
+        st.error("Δεν βρέθηκε το πρώτο φύλλο εργασίας (Worksheet) στο Google Sheet.")
     except Exception as e:
-        st.error(f"Σφάλμα κατά την καταχώρηση. Ελέγξτε τα δικαιώματα. Λεπτομέρειες: {e}")
+        st.error(f"Σφάλμα κατά την καταχώρηση: {e}")
 
 def data_entry_form():
     """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων."""
@@ -98,22 +129,17 @@ def data_entry_form():
         with st.form("new_entry_form", clear_on_submit=True):
             st.markdown("### Εισαγωγή Νέας Πληροφορίας")
             
-            # Στήλη 1: Keyword
             new_keyword = st.text_input("Φράση-Κλειδί (Keyword, π.χ. 'εργασια μαθηματικα')", key="k1")
-            
-            # Στήλη 4: Type
             new_type = st.radio("Τύπος Καταχώρησης", ('Text', 'File'), key="t1")
             
-            # Στήλη 2 & 3: Info & URL (εξαρτώνται από τον Type)
             if new_type == 'Text':
                 new_info = st.text_area("Περιγραφή (Info)", key="i1")
-                new_url = "" # Το URL παραμένει κενό για Text
-            else: # File
+                new_url = ""
+            else: 
                 new_info = st.text_input("Περιγραφή Link (Info)", key="i2")
                 new_url = st.text_input("Σύνδεσμος (URL)", key="u1")
                 
-            # Στήλη 5: Date (προεπιλογή η σημερινή)
-            new_date_obj = st.date_input("Ημερομηνία Καταχώρησης (Date)", value="today", key="d1")
+            new_date_obj = st.date_input("Ημερομηνία Καταχώρησης (Date)", value=datetime.today().date(), key="d1")
             
             # Μετατροπή της ημερομηνίας σε ζητούμενη μορφή DD/MM/YYYY
             new_date_str = new_date_obj.strftime(DATE_FORMAT)
@@ -121,18 +147,16 @@ def data_entry_form():
             submitted = st.form_submit_button("Καταχώρηση 💾")
             
             if submitted:
-                # Έλεγχος βασικών πεδίων
                 if new_keyword and new_info:
-                    new_entry = pd.DataFrame([
-                        {
-                            'Keyword': new_keyword.strip(),
-                            'Info': new_info.strip(),
-                            'URL': new_url.strip(),
-                            'Type': new_type,
-                            'Date': new_date_str
-                        }
-                    ])
-                    submit_entry(new_entry)
+                    # Δημιουργία λίστας τιμών με τη σωστή σειρά για το Sheet
+                    new_entry_list = [
+                        new_keyword.strip(), 
+                        new_info.strip(), 
+                        new_url.strip(), 
+                        new_type, 
+                        new_date_str
+                    ]
+                    submit_entry(new_entry_list)
                 else:
                     st.error("Παρακαλώ συμπληρώστε τη Φράση-Κλειδί και την Περιγραφή.")
 
@@ -144,16 +168,14 @@ st.set_page_config(page_title="Βοηθός Τάξης (Google Sheets)", layout=
 st.title("🤖 Ψηφιακός Βοηθός Τάξης (Google Sheets)")
 st.markdown("---")
 
-# Κύριες ενέργειες
 tag_to_keyword_map, keyword_to_data_map, available_keys_display = load_data()
 
-# Εμφάνιση Φόρμας Καταχώρησης
 data_entry_form() 
 
 st.markdown("---")
 st.header("🔍 Αναζήτηση Πληροφοριών")
 
-info_message = f"Διαθέσιμες φράσεις-κλειδιά: **{', '.join(available_keys_display)}**"
+info_message = f"Διαθέσιμες φράσεις-κλειδιά: **{', '.join(available_keys_display)}**" if available_keys_display else "Δεν βρέθηκαν διαθέσιμες φράσεις-κλειδιά."
 st.info(info_message)
 
 user_input = st.text_input(
@@ -162,7 +184,6 @@ user_input = st.text_input(
 )
 
 if user_input and keyword_to_data_map:
-    # Λογική αναζήτησης (ίδια με πριν)
     search_tag = normalize_text(user_input)
     matching_keywords = tag_to_keyword_map.get(search_tag, set())
     
@@ -171,7 +192,6 @@ if user_input and keyword_to_data_map:
         for keyword in matching_keywords:
             all_results.extend(keyword_to_data_map.get(keyword, [])) 
 
-        # Τα αποτελέσματα είναι ήδη ταξινομημένα από το load_data()
         st.success(f"Βρέθηκαν **{len(all_results)}** πληροφορίες από **{len(matching_keywords)}** φράσεις-κλειδιά.")
 
         for i, (info, url, item_type, date_obj) in enumerate(all_results, 1):
@@ -196,4 +216,4 @@ if user_input and keyword_to_data_map:
         st.warning(f"Δεν βρέθηκε απάντηση για το: '{user_input}'.")
 
 st.markdown("---")
-st.caption("Τα δεδομένα διαβάζονται και γράφονται στο Google Sheet.")
+st.caption("Τα δεδομένα διαβάζονται και γράφονται στο Google Sheet μέσω gspread.")
