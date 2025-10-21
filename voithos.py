@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from gspread_dataframe import set_with_dataframe, get_dataframe 
+from gspread_dataframe.core import set_with_dataframe, get_dataframe # Χρησιμοποιείται για εύκολο read/write
+from datetime import datetime
 from datetime import datetime
 
 # --------------------------------------------------------------------------------
