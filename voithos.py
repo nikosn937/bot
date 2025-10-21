@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
-import gspread # Η βασική βιβλιοθήκη
-from gspread_dataframe import set_with_dataframe, get_dataframe # Χρησιμοποιούμε το αρχικό import
+import gspread # Η μόνη βιβλιοθήκη Sheets
 from datetime import datetime
 
 # --------------------------------------------------------------------------------
@@ -16,7 +15,7 @@ def get_gspread_client():
         # Δημιουργία dictionary από τα secrets
         service_account_info = dict(st.secrets["gcp_service_account"])
         
-        # Αντικαθιστούμε τα \n στο private_key για να το διαβάσει σωστά το gspread
+        # Αντικαθιστούμε τα \n στο private_key 
         service_account_info['private_key'] = service_account_info['private_key'].replace('\\n', '\n')
         
         # Σύνδεση με το Google Sheets API
@@ -58,8 +57,13 @@ def load_data():
         sh = gc.open(SHEET_NAME)
         ws = sh.get_worksheet(0)
         
-        # Ανάγνωση σε DataFrame
-        df = get_dataframe(ws, header=1) 
+        # Ανάγνωση δεδομένων (ως λίστα λιστών)
+        # Χρησιμοποιούμε header=1 για να πάρουμε τα δεδομένα χωρίς την πρώτη γραμμή (headers)
+        data = ws.get_all_values()
+        
+        # Δημιουργία DataFrame από τις λίστες
+        headers = data[0] if data else []
+        df = pd.DataFrame(data[1:], columns=headers) 
         df.columns = df.columns.str.strip()
         
         required_cols = ['Keyword', 'Info', 'URL', 'Type', 'Date']
@@ -111,7 +115,7 @@ def submit_entry(new_entry_list):
         sh = gc.open(SHEET_NAME)
         ws = sh.get_worksheet(0)
         
-        # Προσθήκη νέας σειράς (χρησιμοποιούμε τη λίστα τιμών)
+        # Η μέθοδος append_row είναι η πιο σταθερή για προσθήκη δεδομένων
         ws.append_row(new_entry_list)
         
         st.cache_data.clear() 
@@ -164,8 +168,8 @@ def data_entry_form():
 # 3. UI / ΚΥΡΙΑ ΛΟΓΙΚΗ
 # --------------------------------------------------------------------------------
 
-st.set_page_config(page_title="Βοηθός Τάξης (Google Sheets)", layout="centered")
-st.title("🤖 Ψηφιακός Βοηθός Τάξης (Google Sheets)")
+st.set_page_config(page_title="Βοηθός Τάξης (gspread)", layout="centered")
+st.title("🤖 Ψηφιακός Βοηθός Τάξης (gspread Direct)")
 st.markdown("---")
 
 # Κύριες ενέργειες
@@ -219,4 +223,4 @@ if user_input and keyword_to_data_map:
         st.warning(f"Δεν βρέθηκε απάντηση για το: '{user_input}'.")
 
 st.markdown("---")
-st.caption("Τα δεδομένα διαβάζονται και γράφονται στο Google Sheet μέσω gspread.")
+st.caption("Τα δεδομένα διαβάζονται και γράφονται στο Google Sheet μέσω της βασικής βιβλιοθήκης gspread.")
