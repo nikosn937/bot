@@ -2,4 +2,4 @@ streamlit
 pandas
 unidecode
 gspread
-gspread-dataframe  <-- Αυτή η γραμμή είναι απαραίτητη!
+gspread-dataframe
