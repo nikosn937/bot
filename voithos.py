@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from datetime import datetime, timedelta # Χρειάζεται για υπολογισμό ημερομηνιών
-import re # Χρειάζεται για τον έλεγχο εγκυρότητας Tmima
+from datetime import datetime, timedelta
+import re 
 
 # --------------------------------------------------------------------------------
 # 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS)
@@ -246,6 +246,11 @@ selected_school = st.selectbox(
 # 2. ΦΙΛΤΡΑΡΙΣΜΑ DF ανά ΣΧΟΛΕΙΟ
 if selected_school and selected_school != "-- Επιλέξτε --" and not full_df.empty:
     
+    # ΠΡΟΣΘΗΚΗ: Εμφάνιση Φόρμας Καταχώρησης μόλις επιλεγεί Σχολείο
+    data_entry_form(available_schools, available_tmimata) 
+    st.markdown("---") # Διαχωριστής
+
+    
     # Φιλτράρισμα βάσει του επιλεγμένου σχολείου
     filtered_df_school = full_df[full_df['School'] == selected_school].copy()
     
@@ -258,11 +263,8 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
     
     if not current_tmimata:
         # 3a. Δεν υπάρχουν καταχωρήσεις τμημάτων για το σχολείο
-        st.warning(f"Το Σχολείο '{selected_school}' δεν έχει καταχωρήσεις τμημάτων στο σύστημα.")
+        st.warning(f"Το Σχολείο '{selected_school}' δεν έχει καταχωρήσεις τμημάτων στο σύστημα για αναζήτηση.")
         
-        # Δίνουμε τη δυνατότητα καταχώρησης
-        data_entry_form(available_schools, available_tmimata)
-
     else:
         # 3β. Υποχρεωτική επιλογή Τμήματος
         selected_tmima = st.selectbox(
@@ -282,7 +284,6 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
         two_days_ago = datetime.now() - timedelta(days=2)
         
         # Φιλτράρισμα των δεδομένων του τμήματος για τις τελευταίες 2 ημέρες
-        # Χρησιμοποιούμε .dt.date για να συγκρίνουμε μόνο την ημερομηνία, διορθώνοντας το TypeError
         recent_posts = filtered_df[filtered_df['Date'].dt.date >= two_days_ago.date()]
         
         if not recent_posts.empty:
@@ -322,7 +323,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
         tag_to_keyword_map, keyword_to_data_map = create_search_maps(filtered_df)
         current_available_keys = sorted(filtered_df['Keyword'].unique().tolist())
         
-        # *ΝΕΑ ΠΡΟΣΘΗΚΗ* - Εμφάνιση των διαθέσιμων Keywords
+        # Εμφάνιση των διαθέσιμων Keywords
         info_message = f"Διαθέσιμες φράσεις-κλειδιά: **{', '.join(current_available_keys)}**" if current_available_keys else "Δεν βρέθηκαν διαθέσιμες φράσεις-κλειδιά για αυτά τα κριτήρια."
         st.info(info_message)
 
