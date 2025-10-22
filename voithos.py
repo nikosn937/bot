@@ -191,7 +191,7 @@ def data_entry_form(available_schools, available_tmimata):
                         final_url = 'https://' + final_url
                 
                 # --------------------------------------------------------
-                # ΝΕΟΣ ΚΩΔΙΚΑΣ: ΕΛΕΓΧΟΣ ΕΓΚΥΡΟΤΗΤΑΣ ΤΜΗΜΑΤΟΣ (Tmima)
+                # ΕΛΕΓΧΟΣ ΕΓΚΥΡΟΤΗΤΑΣ ΤΜΗΜΑΤΟΣ (Tmima) - Ελληνικά/Κεφαλαία
                 # --------------------------------------------------------
                 
                 tmima_check = new_tmima_input.strip().upper().replace(" ", "")
@@ -201,7 +201,7 @@ def data_entry_form(available_schools, available_tmimata):
 
                 if not tmima_pattern.match(tmima_check):
                     st.error("⚠️ Σφάλμα Τμήματος: Το πεδίο 'Τμήμα' πρέπει να περιέχει μόνο **Ελληνικούς** κεφαλαίους χαρακτήρες (Α, Β, Γ...) και **αριθμούς** (1, 2, 3...), χωρίς κενά.")
-                    st.stop() # Σταματά την εκτέλεση αν αποτύχει ο έλεγχος
+                    st.stop()
 
                 final_tmima = tmima_check 
                 # --------------------------------------------------------
@@ -249,74 +249,85 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
     # Εύρεση διαθέσιμων τμημάτων για το επιλεγμένο σχολείο
     current_tmimata = sorted(filtered_df_school['Tmima'].unique().tolist())
     
-    # 3. ΕΠΙΛΟΓΗ ΤΜΗΜΑΤΟΣ
-    selected_tmima = st.selectbox(
-        "Επιλέξτε Τμήμα:",
-        options=["Όλα τα Τμήματα"] + current_tmimata,
-        key="tmima_selector"
-    )
-
-    # 4. ΤΕΛΙΚΟ ΦΙΛΤΡΑΡΙΣΜΑ DF ανά ΤΜΗΜΑ
-    if selected_tmima != "Όλα τα Τμήματα":
-        filtered_df = filtered_df_school[filtered_df_school['Tmima'] == selected_tmima]
-    else:
-        filtered_df = filtered_df_school
-
-    # Δημιουργία χαρτών αναζήτησης για τα φιλτραρισμένα δεδομένα
-    tag_to_keyword_map, keyword_to_data_map = create_search_maps(filtered_df)
-    current_available_keys = sorted(filtered_df['Keyword'].unique().tolist())
+    # --------------------------------------------------------------------------
+    # ΝΕΑ ΛΟΓΙΚΗ: ΥΠΟΧΡΕΩΤΙΚΗ ΕΠΙΛΟΓΗ ΤΜΗΜΑΤΟΣ
+    # --------------------------------------------------------------------------
     
-    
-    # 5. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ
-    data_entry_form(available_schools, available_tmimata) 
-    
-    st.markdown("---")
-    st.header(f"🔍 Αναζήτηση Πληροφοριών για: {selected_school} ({selected_tmima})")
-    
-    info_message = f"Διαθέσιμες φράσεις-κλειδιά: **{', '.join(current_available_keys)}**" if current_available_keys else "Δεν βρέθηκαν διαθέσιμες φράσεις-κλειδιά για αυτά τα κριτήρια."
-    st.info(info_message)
-
-    user_input = st.text_input(
-        'Τι θέλεις να μάθεις;', 
-        placeholder='Πληκτρολόγησε π.χ. εκδρομη, εργασια, βιβλια...'
-    )
-
-    if user_input and keyword_to_data_map:
-        # Λογική αναζήτησης 
-        search_tag = normalize_text(user_input)
-        matching_keywords = tag_to_keyword_map.get(search_tag, set())
+    if not current_tmimata:
+        # 3a. Δεν υπάρχουν καταχωρήσεις τμημάτων για το σχολείο
+        st.warning(f"Το Σχολείο '{selected_school}' δεν έχει καταχωρήσεις τμημάτων στο σύστημα.")
         
-        if matching_keywords:
-            all_results = []
+        # Δίνουμε τη δυνατότητα καταχώρησης ακόμα κι αν δεν υπάρχουν τμήματα για φόρτωμα.
+        data_entry_form(available_schools, available_tmimata)
+
+    else:
+        # 3β. Υποχρεωτική επιλογή Τμήματος (αφαιρέθηκε το "Όλα τα Τμήματα")
+        selected_tmima = st.selectbox(
+            "Επιλέξτε Τμήμα (Υποχρεωτικό):", 
+            options=current_tmimata, # ΔΕΝ περιλαμβάνει το "Όλα τα Τμήματα"
+            key="tmima_selector"
+        )
+
+        # 4. ΤΕΛΙΚΟ ΦΙΛΤΡΑΡΙΣΜΑ DF ανά ΤΜΗΜΑ
+        # Δεδομένου ότι η επιλογή είναι υποχρεωτική, φιλτράρουμε απευθείας.
+        filtered_df = filtered_df_school[filtered_df_school['Tmima'] == selected_tmima]
+
+        # Δημιουργία χαρτών αναζήτησης για τα φιλτραρισμένα δεδομένα
+        tag_to_keyword_map, keyword_to_data_map = create_search_maps(filtered_df)
+        current_available_keys = sorted(filtered_df['Keyword'].unique().tolist())
+        
+        
+        # 5. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ
+        data_entry_form(available_schools, available_tmimata) 
+        
+        st.markdown("---")
+        st.header(f"🔍 Αναζήτηση Πληροφοριών για: {selected_school} ({selected_tmima})")
+        
+        info_message = f"Διαθέσιμες φράσεις-κλειδιά: **{', '.join(current_available_keys)}**" if current_available_keys else "Δεν βρέθηκαν διαθέσιμες φράσεις-κλειδιά για αυτά τα κριτήρια."
+        st.info(info_message)
+
+        user_input = st.text_input(
+            'Τι θέλεις να μάθεις;', 
+            placeholder='Πληκτρολόγησε π.χ. εκδρομη, εργασια, βιβλια...'
+        )
+
+        if user_input and keyword_to_data_map:
+            # Λογική αναζήτησης 
+            search_tag = normalize_text(user_input)
+            matching_keywords = tag_to_keyword_map.get(search_tag, set())
             
-            for keyword in matching_keywords:
-                # Το zip έχει 6 στοιχεία: (Info, URL, Type, Date, School, Tmima)
-                all_results.extend(keyword_to_data_map.get(keyword, [])) 
+            if matching_keywords:
+                all_results = []
+                
+                for keyword in matching_keywords:
+                    # Το zip έχει 6 στοιχεία: (Info, URL, Type, Date, School, Tmima)
+                    all_results.extend(keyword_to_data_map.get(keyword, [])) 
 
-            st.success(f"Βρέθηκαν **{len(all_results)}** πληροφορίες.")
+                st.success(f"Βρέθηκαν **{len(all_results)}** πληροφορίες.")
 
-            for i, (info, url, item_type, date_obj, school, tmima) in enumerate(all_results, 1):
-                date_str = date_obj.strftime(DATE_FORMAT) if pd.notna(date_obj) else "Άγνωστη Ημ/νία"
-                header = f"**Καταχώρηση {i}** ({school} - {tmima} | Ημ/νία: {date_str})"
-                
-                if item_type.strip().lower() == 'link': 
-                    link_description = info.strip()
-                    link_url = url.strip()
-                    if link_url:
-                        st.markdown(f"{header}: 🔗 [{link_description}](<{link_url}>)") 
-                    else:
-                        st.markdown(f"{header}: ⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}")
-                
-                elif item_type.strip().lower() == 'text':
-                    st.markdown(f"{header}: 💬 {info}")
-                
-                else:
-                    st.markdown(f"{header}: Άγνωστος Τύπος Καταχώρησης. {info}")
+                for i, (info, url, item_type, date_obj, school, tmima) in enumerate(all_results, 1):
+                    date_str = date_obj.strftime(DATE_FORMAT) if pd.notna(date_obj) else "Άγνωστη Ημ/νία"
+                    header = f"**Καταχώρηση {i}** ({school} - {tmima} | Ημ/νία: {date_str})"
                     
-        else:
-            st.warning(f"Δεν βρέθηκε απάντηση για το: '{user_input}'.")
+                    if item_type.strip().lower() == 'link': 
+                        link_description = info.strip()
+                        link_url = url.strip()
+                        if link_url:
+                            st.markdown(f"{header}: 🔗 [{link_description}](<{link_url}>)") 
+                        else:
+                            st.markdown(f"{header}: ⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}")
+                    
+                    elif item_type.strip().lower() == 'text':
+                        st.markdown(f"{header}: 💬 {info}")
+                    
+                    else:
+                        st.markdown(f"{header}: Άγνωστος Τύπος Καταχώρησης. {info}")
+                        
+            else:
+                st.warning(f"Δεν βρέθηκε απάντηση για το: '{user_input}'.")
 
-    st.markdown("---")
+        st.markdown("---")
+
 
 elif full_df.empty:
     st.warning("Παρακαλώ συμπληρώστε το Google Sheet με τις στήλες 'School' και 'Tmima'.")
