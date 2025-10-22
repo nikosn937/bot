@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from datetime import datetime
+import re # Χρειάζεται για τον έλεγχο εγκυρότητας
 
 # --------------------------------------------------------------------------------
 # 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS)
@@ -55,12 +56,12 @@ def load_data():
         df = pd.DataFrame(data[1:], columns=headers) 
         df.columns = df.columns.str.strip()
         
-        # ΕΝΗΜΕΡΩΣΗ: Απαιτούμενες στήλες με τα νέα ονόματα
         required_cols = ['Keyword', 'Info', 'URL', 'Type', 'Date', 'School', 'Tmima']
         if not all(col in df.columns for col in required_cols):
             st.error(f"Σφάλμα δομής Sheet: Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}.")
             return pd.DataFrame(), [], []
-
+        
+        # Καθαρισμός/Επεξεργασία δεδομένων
         df = df.dropna(subset=['Keyword', 'Date', 'School', 'Tmima'], how='any') 
         df['Date'] = pd.to_datetime(df['Date'], format=DATE_FORMAT, errors='coerce')
         df = df.dropna(subset=['Date'])
@@ -82,7 +83,7 @@ def create_search_maps(df):
     """Δημιουργεί τους χάρτες αναζήτησης μετά το φιλτράρισμα."""
     df_sorted = df.sort_values(by=['Keyword', 'Date'], ascending=[True, False])
     
-    # Το zip τώρα περιλαμβάνει 6 στοιχεία (Info, URL, Type, Date, School, Tmima)
+    # Το zip περιλαμβάνει 6 στοιχεία (Info, URL, Type, Date, School, Tmima)
     keyword_to_data_map = df_sorted.groupby('Keyword').apply(
         lambda x: list(zip(x['Info'], x['URL'], x['Type'], x['Date'], x['School'], x['Tmima']))
     ).to_dict()
@@ -130,17 +131,17 @@ def data_entry_form(available_schools, available_tmimata):
         
         st.markdown("### Εισαγωγή Νέας Πληροφορίας")
         
-        # 1. ΕΠΙΛΟΓΗ ΣΧΟΛΕΙΟΥ & ΤΜΗΜΑΤΟΣ (ΝΕΟ)
+        # 1. ΕΠΙΛΟΓΗ ΣΧΟΛΕΙΟΥ & ΤΜΗΜΑΤΟΣ
         new_school = st.selectbox(
             "Σχολείο:", 
-            options=sorted(list(set(available_schools))), # Χρησιμοποιούμε τα δυναμικά δεδομένα
+            options=sorted(list(set(available_schools))),
             key="form_school"
         )
         
         # Χρησιμοποιούμε text_input για το Τμήμα ώστε να μπορεί να βάλει και νέα τμήματα
-        new_tmima = st.text_input(
+        new_tmima_input = st.text_input(
             "Τμήμα (Tmima):", 
-            placeholder="Π.χ. Α1, Β2",
+            placeholder="Π.χ. Α1, Β2, Γ3",
             key="form_tmima"
         )
         
@@ -189,8 +190,24 @@ def data_entry_form(available_schools, available_tmimata):
                     if not final_url.lower().startswith(('http://', 'https://', 'ftp://')):
                         final_url = 'https://' + final_url
                 
-                # Έλεγχος πληρότητας (πλέον ελέγχουμε και School/Tmima)
-                if not new_keyword or not new_info or not new_school or not new_tmima or (st.session_state.entry_type == 'Link' and not final_url):
+                # --------------------------------------------------------
+                # ΝΕΟΣ ΚΩΔΙΚΑΣ: ΕΛΕΓΧΟΣ ΕΓΚΥΡΟΤΗΤΑΣ ΤΜΗΜΑΤΟΣ (Tmima)
+                # --------------------------------------------------------
+                
+                tmima_check = new_tmima_input.strip().upper().replace(" ", "")
+
+                # Pattern: Μόνο Ελληνικά Κεφαλαία (Α-Ω) ή Αριθμοί (0-9)
+                tmima_pattern = re.compile(r'^[Α-Ω0-9]+$')
+
+                if not tmima_pattern.match(tmima_check):
+                    st.error("⚠️ Σφάλμα Τμήματος: Το πεδίο 'Τμήμα' πρέπει να περιέχει μόνο **Ελληνικούς** κεφαλαίους χαρακτήρες (Α, Β, Γ...) και **αριθμούς** (1, 2, 3...), χωρίς κενά.")
+                    st.stop() # Σταματά την εκτέλεση αν αποτύχει ο έλεγχος
+
+                final_tmima = tmima_check 
+                # --------------------------------------------------------
+                
+                # Έλεγχος πληρότητας
+                if not new_keyword or not new_info or not new_school or not final_tmima or (st.session_state.entry_type == 'Link' and not final_url):
                     st.error("Παρακαλώ συμπληρώστε όλα τα πεδία (Φράση-Κλειδί, Περιγραφή, Σχολείο, Τμήμα και Σύνδεσμο αν είναι Link).")
                 else:
                     new_entry_list = [
@@ -199,8 +216,8 @@ def data_entry_form(available_schools, available_tmimata):
                         final_url, 
                         st.session_state.entry_type, 
                         new_date_str,
-                        new_school,  # ΝΕΑ: Σχολείο
-                        new_tmima.upper() # ΝΕΑ: Τμήμα (σε κεφαλαία)
+                        new_school,  # Σχολείο
+                        final_tmima  # Τυποποιημένο (Ελληνικά/Κεφαλαία/χωρίς κενά)
                     ]
                     submit_entry(new_entry_list)
                     
@@ -250,7 +267,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
     current_available_keys = sorted(filtered_df['Keyword'].unique().tolist())
     
     
-    # 5. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ (χρησιμοποιεί τα διαθέσιμα schools/tmimata για το input)
+    # 5. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ
     data_entry_form(available_schools, available_tmimata) 
     
     st.markdown("---")
