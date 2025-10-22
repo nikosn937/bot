@@ -42,9 +42,9 @@ def get_tags_from_keyword(keyword):
 
 @st.cache_data(ttl=600)
 def load_data():
-    """Φορτώνει, καθαρίζει και ταξινομεί δεδομένα από το Google Sheet."""
+    """Φορτώνει, καθαρίζει και ταξινομεί δεδομένα από το ενιαίο Google Sheet."""
     if gc is None:
-        return {}, {}, []
+        return pd.DataFrame(), [], []
 
     try:
         sh = gc.open(SHEET_NAME)
@@ -55,45 +55,56 @@ def load_data():
         df = pd.DataFrame(data[1:], columns=headers) 
         df.columns = df.columns.str.strip()
         
-        required_cols = ['Keyword', 'Info', 'URL', 'Type', 'Date']
+        # ΕΝΗΜΕΡΩΣΗ: Απαιτούμενες στήλες με τα νέα ονόματα
+        required_cols = ['Keyword', 'Info', 'URL', 'Type', 'Date', 'School', 'Tmima']
         if not all(col in df.columns for col in required_cols):
             st.error(f"Σφάλμα δομής Sheet: Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}.")
-            return {}, {}, []
+            return pd.DataFrame(), [], []
 
-        df = df.dropna(subset=['Keyword', 'Date'], how='any') 
+        df = df.dropna(subset=['Keyword', 'Date', 'School', 'Tmima'], how='any') 
         df['Date'] = pd.to_datetime(df['Date'], format=DATE_FORMAT, errors='coerce')
         df = df.dropna(subset=['Date'])
         
-        df_sorted = df.sort_values(by=['Keyword', 'Date'], ascending=[True, False])
+        # Εξαγωγή διαθέσιμων Σχολείων και Τμημάτων δυναμικά
+        available_schools = sorted(df['School'].unique().tolist()) if 'School' in df.columns else []
+        available_tmimata = sorted(df['Tmima'].unique().tolist()) if 'Tmima' in df.columns else []
         
-        unique_keywords = df_sorted['Keyword'].unique()
-        keyword_to_data_map = df_sorted.groupby('Keyword').apply(
-            lambda x: list(zip(x['Info'], x['URL'], x['Type'], x['Date']))
-        ).to_dict()
-
-        tag_to_keyword_map = {}
-        for keyword in unique_keywords:
-            normalized_tags = get_tags_from_keyword(keyword)
-            for tag in normalized_tags:
-                if tag not in tag_to_keyword_map:
-                    tag_to_keyword_map[tag] = set()
-                tag_to_keyword_map[tag].add(keyword)
-                
-        return tag_to_keyword_map, keyword_to_data_map, sorted(unique_keywords)
+        return df, available_schools, available_tmimata
         
     except gspread.exceptions.SpreadsheetNotFound:
         st.error(f"Σφάλμα: Δεν βρέθηκε το Google Sheet με όνομα: '{SHEET_NAME}'. Ελέγξτε το όνομα στα secrets.")
-        return {}, {}, []
+        return pd.DataFrame(), [], []
     except Exception as e:
-        st.error(f"Σφάλμα φόρτωσης/επεξεργασίας δεδομένων. Ελέγξτε τις επικεφαλίδες. Λεπτομέρειες: {e}")
-        return {}, {}, []
+        st.error(f"Σφάλμα φόρτωσης/επεξεργασίας δεδομένων. Λεπτομέρειες: {e}")
+        return pd.DataFrame(), [], []
+
+def create_search_maps(df):
+    """Δημιουργεί τους χάρτες αναζήτησης μετά το φιλτράρισμα."""
+    df_sorted = df.sort_values(by=['Keyword', 'Date'], ascending=[True, False])
+    
+    # Το zip τώρα περιλαμβάνει 6 στοιχεία (Info, URL, Type, Date, School, Tmima)
+    keyword_to_data_map = df_sorted.groupby('Keyword').apply(
+        lambda x: list(zip(x['Info'], x['URL'], x['Type'], x['Date'], x['School'], x['Tmima']))
+    ).to_dict()
+
+    tag_to_keyword_map = {}
+    unique_keywords = df_sorted['Keyword'].unique()
+    for keyword in unique_keywords:
+        normalized_tags = get_tags_from_keyword(keyword)
+        for tag in normalized_tags:
+            if tag not in tag_to_keyword_map:
+                tag_to_keyword_map[tag] = set()
+            tag_to_keyword_map[tag].add(keyword)
+            
+    return tag_to_keyword_map, keyword_to_data_map
+
 
 # --------------------------------------------------------------------------------
 # 2. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ
 # --------------------------------------------------------------------------------
 
 def submit_entry(new_entry_list):
-    """Προσθέτει μια νέα σειρά στο Google Sheet χρησιμοποιώντας gspread."""
+    """Προσθέτει μια νέα σειρά στο Google Sheet."""
     if gc is None:
         st.error("Η σύνδεση με το Google Sheets απέτυχε.")
         return
@@ -112,14 +123,28 @@ def submit_entry(new_entry_list):
     except Exception as e:
         st.error(f"Σφάλμα κατά την καταχώρηση. Ελέγξτε τα δικαιώματα. Λεπτομέρειες: {e}")
 
-def data_entry_form():
-    """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων, με διορθωμένο UX."""
+def data_entry_form(available_schools, available_tmimata):
+    """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων."""
     
     with st.expander("➕ Νέα Καταχώρηση"):
         
         st.markdown("### Εισαγωγή Νέας Πληροφορίας")
         
-        # 1. Το Radio Button ΕΞΩ από το Form (Για άμεσο rerun/UX fix)
+        # 1. ΕΠΙΛΟΓΗ ΣΧΟΛΕΙΟΥ & ΤΜΗΜΑΤΟΣ (ΝΕΟ)
+        new_school = st.selectbox(
+            "Σχολείο:", 
+            options=sorted(list(set(available_schools))), # Χρησιμοποιούμε τα δυναμικά δεδομένα
+            key="form_school"
+        )
+        
+        # Χρησιμοποιούμε text_input για το Τμήμα ώστε να μπορεί να βάλει και νέα τμήματα
+        new_tmima = st.text_input(
+            "Τμήμα (Tmima):", 
+            placeholder="Π.χ. Α1, Β2",
+            key="form_tmima"
+        )
+        
+        # 2. Το Radio Button ΕΞΩ από το Form (Για άμεσο rerun/UX fix)
         if 'entry_type' not in st.session_state:
             st.session_state['entry_type'] = 'Text'
             
@@ -132,9 +157,8 @@ def data_entry_form():
         
         new_url = ""
         
-        # 2. Άμεση εμφάνιση του πεδίου URL αν επιλεγεί
+        # 3. Άμεση εμφάνιση του πεδίου URL αν επιλεγεί
         if st.session_state.entry_type == 'Link':
-            # Το πεδίο URL είναι εκτός form για άμεση ορατότητα, αλλά η τιμή του αποθηκεύεται
             st.session_state['new_url_value'] = st.text_input(
                 "Σύνδεσμος (URL)", 
                 key="u1_link_input",
@@ -142,7 +166,7 @@ def data_entry_form():
             )
             new_url = st.session_state.get('new_url_value', "")
         
-        # 3. ΦΟΡΜΑ ΥΠΟΒΟΛΗΣ (με τα υπόλοιπα πεδία)
+        # 4. ΦΟΡΜΑ ΥΠΟΒΟΛΗΣ (με τα υπόλοιπα πεδία)
         with st.form("new_entry_form", clear_on_submit=True):
             
             new_keyword = st.text_input("Φράση-Κλειδί (Keyword, π.χ. 'εργασια μαθηματικα')", key="k1_form")
@@ -160,21 +184,23 @@ def data_entry_form():
             if submitted:
                 final_url = new_url.strip() if st.session_state.entry_type == 'Link' else ""
                 
-                # ΚΟΜΒΙΚΗ ΔΙΟΡΘΩΣΗ: Αυτόματη Προσθήκη https://
+                # Αυτόματη Προσθήκη https://
                 if final_url and st.session_state.entry_type == 'Link':
                     if not final_url.lower().startswith(('http://', 'https://', 'ftp://')):
                         final_url = 'https://' + final_url
                 
-                # Έλεγχος πληρότητας
-                if not new_keyword or not new_info or (st.session_state.entry_type == 'Link' and not final_url):
-                    st.error("Παρακαλώ συμπληρώστε τη Φράση-Κλειδί, την Περιγραφή και τον Σύνδεσμο (αν είναι Link).")
+                # Έλεγχος πληρότητας (πλέον ελέγχουμε και School/Tmima)
+                if not new_keyword or not new_info or not new_school or not new_tmima or (st.session_state.entry_type == 'Link' and not final_url):
+                    st.error("Παρακαλώ συμπληρώστε όλα τα πεδία (Φράση-Κλειδί, Περιγραφή, Σχολείο, Τμήμα και Σύνδεσμο αν είναι Link).")
                 else:
                     new_entry_list = [
                         new_keyword.strip(), 
                         new_info.strip(), 
                         final_url, 
                         st.session_state.entry_type, 
-                        new_date_str
+                        new_date_str,
+                        new_school,  # ΝΕΑ: Σχολείο
+                        new_tmima.upper() # ΝΕΑ: Τμήμα (σε κεφαλαία)
                     ]
                     submit_entry(new_entry_list)
                     
@@ -183,59 +209,102 @@ def data_entry_form():
 # --------------------------------------------------------------------------------
 
 st.set_page_config(page_title="Βοηθός Τάξης (gspread)", layout="centered")
-st.title("🤖 Ψηφιακός Βοηθός Τάξης (gspread Direct)")
+st.title("🤖 Ψηφιακός Βοηθός Τάξης (gspread Multi-School/Tmima)")
 st.markdown("---")
 
-# Κύριες ενέργειες
-tag_to_keyword_map, keyword_to_data_map, available_keys_display = load_data()
+# Φόρτωση όλων των δεδομένων και των διαθέσιμων επιλογών
+full_df, available_schools, available_tmimata = load_data()
 
-# Εμφάνιση Φόρμας Καταχώρησης
-data_entry_form() 
 
-st.markdown("---")
-st.header("🔍 Αναζήτηση Πληροφοριών")
-
-info_message = f"Διαθέσιμες φράσεις-κλειδιά: **{', '.join(available_keys_display)}**" if available_keys_display else "Δεν βρέθηκαν διαθέσιμες φράσεις-κλειδιά."
-st.info(info_message)
-
-user_input = st.text_input(
-    'Τι θέλεις να μάθεις;', 
-    placeholder='Πληκτρολόγησε π.χ. εκδρομη, εργασια, βιβλια...'
+# 1. ΕΠΙΛΟΓΗ ΣΧΟΛΕΙΟΥ
+selected_school = st.selectbox(
+    "Επιλέξτε Σχολείο:",
+    options=["-- Επιλέξτε --"] + available_schools,
+    key="school_selector"
 )
 
-if user_input and keyword_to_data_map:
-    # Λογική αναζήτησης 
-    search_tag = normalize_text(user_input)
-    matching_keywords = tag_to_keyword_map.get(search_tag, set())
+# 2. ΦΙΛΤΡΑΡΙΣΜΑ DF ανά ΣΧΟΛΕΙΟ
+if selected_school and selected_school != "-- Επιλέξτε --" and not full_df.empty:
     
-    if matching_keywords:
-        all_results = []
-        for keyword in matching_keywords:
-            all_results.extend(keyword_to_data_map.get(keyword, [])) 
+    # Φιλτράρισμα βάσει του επιλεγμένου σχολείου
+    filtered_df_school = full_df[full_df['School'] == selected_school].copy()
+    
+    # Εύρεση διαθέσιμων τμημάτων για το επιλεγμένο σχολείο
+    current_tmimata = sorted(filtered_df_school['Tmima'].unique().tolist())
+    
+    # 3. ΕΠΙΛΟΓΗ ΤΜΗΜΑΤΟΣ
+    selected_tmima = st.selectbox(
+        "Επιλέξτε Τμήμα:",
+        options=["Όλα τα Τμήματα"] + current_tmimata,
+        key="tmima_selector"
+    )
 
-        st.success(f"Βρέθηκαν **{len(all_results)}** πληροφορίες από **{len(matching_keywords)}** φράσεις-κλειδιά.")
-
-        for i, (info, url, item_type, date_obj) in enumerate(all_results, 1):
-            date_str = date_obj.strftime(DATE_FORMAT) if pd.notna(date_obj) else "Άγνωστη Ημ/νία"
-            header = f"**Καταχώρηση {i}** (Ημ/νία: {date_str})"
-            
-            # Διόρθωση στο rendering για να ταιριάζει με το νέο 'Link'
-            if item_type.strip().lower() == 'link': 
-                link_description = info.strip()
-                link_url = url.strip()
-                if link_url:
-                    st.markdown(f"{header}: 🔗 [{link_description}](<{link_url}>)") 
-                else:
-                    st.markdown(f"{header}: ⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}")
-            
-            elif item_type.strip().lower() == 'text':
-                st.markdown(f"{header}: 💬 {info}")
-            
-            else:
-                st.markdown(f"{header}: Άγνωστος Τύπος Καταχώρησης. {info}")
-                
+    # 4. ΤΕΛΙΚΟ ΦΙΛΤΡΑΡΙΣΜΑ DF ανά ΤΜΗΜΑ
+    if selected_tmima != "Όλα τα Τμήματα":
+        filtered_df = filtered_df_school[filtered_df_school['Tmima'] == selected_tmima]
     else:
-        st.warning(f"Δεν βρέθηκε απάντηση για το: '{user_input}'.")
+        filtered_df = filtered_df_school
 
-st.markdown("---")
+    # Δημιουργία χαρτών αναζήτησης για τα φιλτραρισμένα δεδομένα
+    tag_to_keyword_map, keyword_to_data_map = create_search_maps(filtered_df)
+    current_available_keys = sorted(filtered_df['Keyword'].unique().tolist())
+    
+    
+    # 5. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ (χρησιμοποιεί τα διαθέσιμα schools/tmimata για το input)
+    data_entry_form(available_schools, available_tmimata) 
+    
+    st.markdown("---")
+    st.header(f"🔍 Αναζήτηση Πληροφοριών για: {selected_school} ({selected_tmima})")
+    
+    info_message = f"Διαθέσιμες φράσεις-κλειδιά: **{', '.join(current_available_keys)}**" if current_available_keys else "Δεν βρέθηκαν διαθέσιμες φράσεις-κλειδιά για αυτά τα κριτήρια."
+    st.info(info_message)
+
+    user_input = st.text_input(
+        'Τι θέλεις να μάθεις;', 
+        placeholder='Πληκτρολόγησε π.χ. εκδρομη, εργασια, βιβλια...'
+    )
+
+    if user_input and keyword_to_data_map:
+        # Λογική αναζήτησης 
+        search_tag = normalize_text(user_input)
+        matching_keywords = tag_to_keyword_map.get(search_tag, set())
+        
+        if matching_keywords:
+            all_results = []
+            
+            for keyword in matching_keywords:
+                # Το zip έχει 6 στοιχεία: (Info, URL, Type, Date, School, Tmima)
+                all_results.extend(keyword_to_data_map.get(keyword, [])) 
+
+            st.success(f"Βρέθηκαν **{len(all_results)}** πληροφορίες.")
+
+            for i, (info, url, item_type, date_obj, school, tmima) in enumerate(all_results, 1):
+                date_str = date_obj.strftime(DATE_FORMAT) if pd.notna(date_obj) else "Άγνωστη Ημ/νία"
+                header = f"**Καταχώρηση {i}** ({school} - {tmima} | Ημ/νία: {date_str})"
+                
+                if item_type.strip().lower() == 'link': 
+                    link_description = info.strip()
+                    link_url = url.strip()
+                    if link_url:
+                        st.markdown(f"{header}: 🔗 [{link_description}](<{link_url}>)") 
+                    else:
+                        st.markdown(f"{header}: ⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}")
+                
+                elif item_type.strip().lower() == 'text':
+                    st.markdown(f"{header}: 💬 {info}")
+                
+                else:
+                    st.markdown(f"{header}: Άγνωστος Τύπος Καταχώρησης. {info}")
+                    
+        else:
+            st.warning(f"Δεν βρέθηκε απάντηση για το: '{user_input}'.")
+
+    st.markdown("---")
+
+elif full_df.empty:
+    st.warning("Παρακαλώ συμπληρώστε το Google Sheet με τις στήλες 'School' και 'Tmima'.")
+else:
+    st.info("Παρακαλώ επιλέξτε Σχολείο για να ξεκινήσει η αναζήτηση.")
+
+
 st.caption("Τα δεδομένα διαβάζονται και γράφονται στο Google Sheet μέσω της βασικής βιβλιοθήκης gspread.")
