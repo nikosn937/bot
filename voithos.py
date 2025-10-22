@@ -322,6 +322,9 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
         tag_to_keyword_map, keyword_to_data_map = create_search_maps(filtered_df)
         current_available_keys = sorted(filtered_df['Keyword'].unique().tolist())
         
+        # *ΝΕΑ ΠΡΟΣΘΗΚΗ* - Εμφάνιση των διαθέσιμων Keywords
+        info_message = f"Διαθέσιμες φράσεις-κλειδιά: **{', '.join(current_available_keys)}**" if current_available_keys else "Δεν βρέθηκαν διαθέσιμες φράσεις-κλειδιά για αυτά τα κριτήρια."
+        st.info(info_message)
 
         user_input = st.text_input(
             'Τι θέλεις να μάθεις;', 
