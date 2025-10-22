@@ -28,7 +28,7 @@ def get_gspread_client():
 gc = get_gspread_client()
 SHEET_NAME = st.secrets["sheet_name"] 
 DATE_FORMAT = '%d/%m/%Y'
-
+# Ο κωδικός διαχειριστή αφαιρέθηκε, η φόρμα είναι ανοιχτή σε όλους
 # --------------------------------------------------------------------------------
 # 1. ΒΟΗΘΗΤΙΚΕΣ ΣΥΝΑΡΤΗΣΕΙΣ
 # --------------------------------------------------------------------------------
@@ -58,7 +58,6 @@ def load_data():
         ws = sh.get_worksheet(0)
         
         # Ανάγνωση δεδομένων (ως λίστα λιστών)
-        # Χρησιμοποιούμε header=1 για να πάρουμε τα δεδομένα χωρίς την πρώτη γραμμή (headers)
         data = ws.get_all_values()
         
         # Δημιουργία DataFrame από τις λίστες
@@ -93,7 +92,7 @@ def load_data():
                 tag_to_keyword_map[tag].add(keyword)
                 
         return tag_to_keyword_map, keyword_to_data_map, sorted(unique_keywords)
-    
+        
     except gspread.exceptions.SpreadsheetNotFound:
         st.error(f"Σφάλμα: Δεν βρέθηκε το Google Sheet με όνομα: '{SHEET_NAME}'. Ελέγξτε το όνομα στα secrets.")
         return {}, {}, []
@@ -127,43 +126,79 @@ def submit_entry(new_entry_list):
         st.error(f"Σφάλμα κατά την καταχώρηση. Ελέγξτε τα δικαιώματα. Λεπτομέρειες: {e}")
 
 def data_entry_form():
-    """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων."""
+    """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων, με διορθωμένο UX."""
     
-    with st.expander("➕ Νέα Καταχώρηση (Διαχειριστής)"):
+    # -----------------------------------------------------------------
+    # ΔΙΟΡΘΩΣΗ BUG: st.radio ΕΞΩ ΑΠΟ ΤΟ FORM ΓΙΑ ΑΜΕΣΗ ΑΝΑΝΕΩΣΗ
+    # -----------------------------------------------------------------
+    
+    with st.expander("➕ Νέα Καταχώρηση"):
+        
+        st.markdown("### Εισαγωγή Νέας Πληροφορίας")
+        
+        # 1. Το Radio Button ΕΞΩ από το Form (Χρησιμοποιούμε session state για να κρατήσει την τιμή)
+        if 'entry_type' not in st.session_state:
+            st.session_state['entry_type'] = 'Text'
+            
+        st.session_state.entry_type = st.radio(
+            "Τύπος Καταχώρησης", 
+            ('Text', 'Link'), # <-- Αλλαγή από 'File' σε 'Link'
+            horizontal=True,
+            key="radio_type_key"
+        )
+        
+        # Αρχικοποίηση μεταβλητών
+        new_url = ""
+        
+        # 2. Άμεση εμφάνιση του πεδίου URL αν επιλεγεί
+        if st.session_state.entry_type == 'Link':
+            # Το πεδίο URL είναι εκτός form για άμεση ορατότητα, αλλά η τιμή του αποθηκεύεται
+            st.session_state['new_url_value'] = st.text_input(
+                "Σύνδεσμος (URL)", 
+                key="u1_link_input",
+                placeholder="Προσθέστε έναν URL, σύνδεσμο Google Drive, κλπ."
+            )
+            # Ενημέρωση της new_url για χρήση αργότερα
+            new_url = st.session_state.get('new_url_value', "")
+        
+        # -----------------------------------------------------------------
+        # 3. ΦΟΡΜΑ ΥΠΟΒΟΛΗΣ
+        # -----------------------------------------------------------------
+        
         with st.form("new_entry_form", clear_on_submit=True):
-            st.markdown("### Εισαγωγή Νέας Πληροφορίας")
             
-            new_keyword = st.text_input("Φράση-Κλειδί (Keyword, π.χ. 'εργασια μαθηματικα')", key="k1")
-            new_type = st.radio("Τύπος Καταχώρησης", ('Text', 'File'), key="t1")
-            
-            if new_type == 'Text':
-                new_info = st.text_area("Περιγραφή (Info)", key="i1")
-                new_url = ""
+            new_keyword = st.text_input("Φράση-Κλειδί (Keyword, π.χ. 'εργασια μαθηματικα')", key="k1_form")
+
+            # Εμφάνιση του πεδίου Info ανάλογα με τον Τύπο
+            if st.session_state.entry_type == 'Text':
+                new_info = st.text_area("Περιγραφή (Info)", key="i1_text_area")
             else: 
-                new_info = st.text_input("Περιγραφή Link (Info)", key="i2")
-                new_url = st.text_input("Σύνδεσμος (URL)", key="u1")
-                
-            new_date_obj = st.date_input("Ημερομηνία Καταχώρησης (Date)", value=datetime.today().date(), key="d1")
-            
-            # Μετατροπή της ημερομηνίας σε ζητούμενη μορφή DD/MM/YYYY
+                # new_type == 'Link'
+                new_info = st.text_input("Περιγραφή Συνδέσμου (Info)", key="i2_text_input")
+                # Η new_url έχει ήδη τιμή από το input πάνω
+
+            new_date_obj = st.date_input("Ημερομηνία Καταχώρησης (Date)", value=datetime.today().date(), key="d1_date")
             new_date_str = new_date_obj.strftime(DATE_FORMAT)
             
             submitted = st.form_submit_button("Καταχώρηση 💾")
             
             if submitted:
-                if new_keyword and new_info:
-                    # Δημιουργία λίστας τιμών με τη σωστή σειρά για το Sheet (Keyword, Info, URL, Type, Date)
+                # Χρησιμοποιούμε τις σωστές μεταβλητές ανάλογα με τον Τύπο
+                final_url = new_url.strip() if st.session_state.entry_type == 'Link' else ""
+                
+                # Έλεγχος πληρότητας
+                if not new_keyword or not new_info or (st.session_state.entry_type == 'Link' and not final_url):
+                    st.error("Παρακαλώ συμπληρώστε τη Φράση-Κλειδί, την Περιγραφή και τον Σύνδεσμο (αν είναι Link).")
+                else:
                     new_entry_list = [
                         new_keyword.strip(), 
                         new_info.strip(), 
-                        new_url.strip(), 
-                        new_type, 
+                        final_url, # Χρησιμοποιούμε το URL
+                        st.session_state.entry_type, 
                         new_date_str
                     ]
                     submit_entry(new_entry_list)
-                else:
-                    st.error("Παρακαλώ συμπληρώστε τη Φράση-Κλειδί και την Περιγραφή.")
-
+                    
 # --------------------------------------------------------------------------------
 # 3. UI / ΚΥΡΙΑ ΛΟΓΙΚΗ
 # --------------------------------------------------------------------------------
@@ -205,13 +240,14 @@ if user_input and keyword_to_data_map:
             date_str = date_obj.strftime(DATE_FORMAT) if pd.notna(date_obj) else "Άγνωστη Ημ/νία"
             header = f"**Καταχώρηση {i}** (Ημ/νία: {date_str})"
             
-            if item_type.strip().lower() == 'file':
+            # Διόρθωση στο rendering για να ταιριάζει με το νέο 'Link'
+            if item_type.strip().lower() == 'link': # <-- Έλεγχος για 'link'
                 link_description = info.strip()
                 link_url = url.strip()
                 if link_url:
-                    st.markdown(f"{header}: 📂 [{link_description}](<{link_url}>)")
+                    st.markdown(f"{header}: 🔗 [{link_description}](<{link_url}>)") # <-- Νέο emoji 🔗
                 else:
-                    st.markdown(f"{header}: 💬 **Προσοχή:** Καταχώρηση αρχείου χωρίς σύνδεσμο. Περιγραφή: {link_description}")
+                    st.markdown(f"{header}: ⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}")
             
             elif item_type.strip().lower() == 'text':
                 st.markdown(f"{header}: 💬 {info}")
