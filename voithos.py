@@ -44,13 +44,14 @@ def get_tags_from_keyword(keyword):
 
 @st.cache_data(ttl=600)
 def load_data():
-    """Φορτώνει, καθαρίζει και ταξινομεί δεδομένα από το ενιαίο Google Sheet."""
+    """Φορτώνει, καθαρίζει και ταξινομεί δεδομένα από το ενιαίο Google Sheet (Main Data Sheet)."""
     if gc is None:
         return pd.DataFrame(), [], []
 
     try:
         sh = gc.open(SHEET_NAME)
-        ws = sh.get_worksheet(0)
+        # Χρησιμοποιούμε το πρώτο worksheet (index 0) ως το κύριο φύλλο δεδομένων
+        ws = sh.get_worksheet(0) 
         data = ws.get_all_values()
         
         headers = data[0] if data else []
@@ -81,6 +82,39 @@ def load_data():
         st.error(f"Σφάλμα φόρτωσης/επεξεργασίας δεδομένων. Λεπτομέρειες: {e}")
         return pd.DataFrame(), [], []
 
+@st.cache_data(ttl=600)
+def load_users_data():
+    """Φορτώνει τα δεδομένα χρηστών (Username, Password, School) από το sheet 'Χρήστες'."""
+    if gc is None:
+        return pd.DataFrame()
+
+    try:
+        sh = gc.open(SHEET_NAME)
+        # Αναζήτηση του worksheet με βάση το όνομα "Χρήστες"
+        ws = sh.worksheet("Χρήστες")
+        data = ws.get_all_values()
+        
+        headers = data[0] if data else []
+        df_users = pd.DataFrame(data[1:], columns=headers)
+        df_users.columns = df_users.columns.str.strip()
+        
+        required_cols = ['School', 'UserName', 'Password']
+        if not all(col in df_users.columns for col in required_cols):
+            st.error(f"Σφάλμα δομής Sheet 'Χρήστες': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}.")
+            return pd.DataFrame()
+
+        # Καθαρισμός/Επεξεργασία
+        df_users = df_users.dropna(subset=['School', 'UserName', 'Password'], how='any')
+        
+        return df_users
+        
+    except gspread.exceptions.WorksheetNotFound:
+        st.error("Σφάλμα: Δεν βρέθηκε το worksheet 'Χρήστες'. Παρακαλώ ελέγξτε το όνομα στο Google Sheet.")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Σφάλμα φόρτωσης δεδομένων χρηστών. Λεπτομέρειες: {e}")
+        return pd.DataFrame()
+
 def create_search_maps(df):
     """Δημιουργεί τους χάρτες αναζήτησης μετά το φιλτράρισμα."""
     df_sorted = df.sort_values(by=['Keyword', 'Date'], ascending=[True, False])
@@ -103,7 +137,7 @@ def create_search_maps(df):
 
 
 # --------------------------------------------------------------------------------
-# 2. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ
+# 2. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ / AUTHENTICATION
 # --------------------------------------------------------------------------------
 
 def submit_entry(new_entry_list):
@@ -126,19 +160,17 @@ def submit_entry(new_entry_list):
     except Exception as e:
         st.error(f"Σφάλμα κατά την καταχώρηση. Ελέγξτε τα δικαιώματα. Λεπτομέρειες: {e}")
 
-def data_entry_form(available_schools, available_tmimata):
-    """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων."""
+def data_entry_form(available_schools, available_tmimata, logged_in_school):
+    """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων. (Το σχολείο είναι προ-επιλεγμένο)"""
     
-    with st.expander("➕ Νέα Καταχώρηση"):
+    with st.expander(f"➕ Νέα Καταχώρηση για το {logged_in_school}"):
         
         st.markdown("### Εισαγωγή Νέας Πληροφορίας (Μόνο για Εκπαιδευτικούς)")
         
-        # 1. ΕΠΙΛΟΓΗ ΣΧΟΛΕΙΟΥ & ΤΜΗΜΑΤΟΣ
-        new_school = st.selectbox(
-            "Σχολείο:", 
-            options=sorted(list(set(available_schools))),
-            key="form_school"
-        )
+        # 1. ΕΠΙΛΟΓΗ ΣΧΟΛΕΙΟΥ & ΤΜΗΜΑΤΟΣ (Το Σχολείο είναι προεπιλεγμένο/κλειδωμένο)
+        # Εμφάνιση του σχολείου του συνδεδεμένου χρήστη
+        st.code(f"Σχολείο Καταχώρησης: {logged_in_school}", language='text')
+        new_school = logged_in_school # ΟΡΙΖΕΤΑΙ από τον συνδεδεμένο χρήστη
         
         # Χρησιμοποιούμε text_input για το Τμήμα ώστε να μπορεί να βάλει και νέα τμήματα
         new_tmima_input = st.text_input(
@@ -196,7 +228,6 @@ def data_entry_form(available_schools, available_tmimata):
                 # ΕΛΕΓΧΟΣ ΕΓΚΥΡΟΤΗΤΑΣ ΤΜΗΜΑΤΟΣ (Tmima) - Ελληνικά/Κεφαλαία
                 # --------------------------------------------------------
                 
-                # Μετατροπή σε κεφαλαία και αφαίρεση κενών για την τελική καταχώρηση
                 tmima_check = new_tmima_input.strip().upper().replace(" ", "")
 
                 # Pattern: Μόνο Ελληνικά Κεφαλαία (Α-Ω) ή Αριθμοί (0-9)
@@ -204,8 +235,7 @@ def data_entry_form(available_schools, available_tmimata):
 
                 if not tmima_pattern.match(tmima_check):
                     st.error("⚠️ Σφάλμα Τμήματος: Το πεδίο 'Τμήμα' πρέπει να περιέχει μόνο **Ελληνικούς** κεφαλαίους χαρακτήρες (Α, Β, Γ...) και **αριθμούς** (1, 2, 3...), χωρίς κενά. Διορθώστε την εισαγωγή σας.")
-                    st.stop() # Σταματά την εκτέλεση αν αποτύχει ο έλεγχος
-
+                    st.stop()
                 final_tmima = tmima_check 
                 # --------------------------------------------------------
                 
@@ -219,21 +249,76 @@ def data_entry_form(available_schools, available_tmimata):
                         final_url, 
                         st.session_state.entry_type, 
                         new_date_str,
-                        new_school,  # Σχολείο
-                        final_tmima  # Τυποποιημένο (Ελληνικά/Κεφαλαία/χωρίς κενά)
+                        new_school,  # Σχολείο (από session state)
+                        final_tmima  # Τυποποιημένο
                     ]
                     submit_entry(new_entry_list)
-                    
+
+def teacher_login(df_users):
+    """Δημιουργεί τη φόρμα σύνδεσης και χειρίζεται την πιστοποίηση."""
+    
+    # Αρχικοποίηση session state για την πιστοποίηση αν δεν υπάρχει
+    if 'authenticated' not in st.session_state:
+        st.session_state['authenticated'] = False
+        st.session_state['logged_in_school'] = None
+        st.session_state['login_attempted'] = False
+
+    st.sidebar.markdown("### Σύνδεση Εκπαιδευτικού 🔑")
+
+    if st.session_state.authenticated:
+        st.sidebar.success(f"Συνδεδεμένος ως: **{st.session_state.logged_in_school}**")
+        if st.sidebar.button("Αποσύνδεση"):
+            st.session_state.authenticated = False
+            st.session_state.logged_in_school = None
+            st.cache_data.clear() # Καθαρισμός cache για ασφάλεια
+            st.rerun()
+        return True
+
+    # Εμφάνιση φόρμας σύνδεσης
+    with st.sidebar.form("login_form"):
+        username_input = st.text_input("Όνομα Χρήστη (UserName)", key="login_username")
+        password_input = st.text_input("Κωδικός (Password)", type="password", key="login_password")
+        submitted = st.form_submit_button("Σύνδεση")
+
+        if submitted:
+            st.session_state.login_attempted = True
+            
+            # Έλεγχος διαπιστευτηρίων
+            user_found = df_users[
+                (df_users['UserName'].astype(str).str.strip() == username_input.strip()) &
+                (df_users['Password'].astype(str).str.strip() == password_input.strip())
+            ]
+            
+            if not user_found.empty:
+                st.session_state.authenticated = True
+                # Αποθηκεύουμε το σχολείο του συνδεδεμένου χρήστη
+                st.session_state.logged_in_school = user_found['School'].iloc[0].strip()
+                st.success("Επιτυχής σύνδεση!")
+                st.rerun() # Επανεκτέλεση για να εμφανιστούν οι επιλογές
+            else:
+                st.error("Λάθος όνομα χρήστη ή κωδικός.")
+                st.session_state.authenticated = False
+                st.session_state.logged_in_school = None
+                
+    if st.session_state.login_attempted and not st.session_state.authenticated:
+        st.sidebar.error("Αποτυχία σύνδεσης.")
+        
+    return st.session_state.authenticated
+
 # --------------------------------------------------------------------------------
 # 3. UI / ΚΥΡΙΑ ΛΟΓΙΚΗ
 # --------------------------------------------------------------------------------
 
 st.set_page_config(page_title="Βοηθός Τάξης", layout="centered")
 st.title("🤖 Ψηφιακός Βοηθός Τάξης (Steam Project)")
-st.markdown("---")
 
 # Φόρτωση όλων των δεδομένων και των διαθέσιμων επιλογών
 full_df, available_schools, available_tmimata = load_data()
+df_users = load_users_data() # ΝΕΟ: Φόρτωση δεδομένων χρηστών
+
+# ΕΝΣΩΜΑΤΩΣΗ ΦΟΡΜΑΣ ΣΥΝΔΕΣΗΣ ΣΤΗΝ ΠΛΕΥΡΙΚΗ ΣΤΗΛΗ
+is_authenticated = teacher_login(df_users)
+st.markdown("---")
 
 
 # 1. ΕΠΙΛΟΓΗ ΣΧΟΛΕΙΟΥ
@@ -246,9 +331,21 @@ selected_school = st.selectbox(
 # 2. ΦΙΛΤΡΑΡΙΣΜΑ DF ανά ΣΧΟΛΕΙΟ
 if selected_school and selected_school != "-- Επιλέξτε --" and not full_df.empty:
     
-    # ΠΡΟΣΘΗΚΗ: Εμφάνιση Φόρμας Καταχώρησης μόλις επιλεγεί Σχολείο
-    data_entry_form(available_schools, available_tmimata) 
-    st.markdown("---") # Διαχωριστής
+    # --------------------------------------------------------------------------
+    # ΕΛΕΓΧΟΣ ΠΡΟΣΒΑΣΗΣ ΦΟΡΜΑΣ ΚΑΤΑΧΩΡΗΣΗΣ
+    # --------------------------------------------------------------------------
+    logged_in_school = st.session_state.get('logged_in_school')
+    
+    if is_authenticated and logged_in_school == selected_school:
+        # Εμφάνιση Φόρμας Καταχώρησης ΜΟΝΟ αν ο χρήστης είναι συνδεδεμένος ΚΑΙ έχει επιλέξει το σχολείο του
+        data_entry_form(available_schools, available_tmimata, logged_in_school) 
+        st.markdown("---") # Διαχωριστής
+    elif is_authenticated:
+        st.warning(f"Είστε συνδεδεμένος ως εκπαιδευτικός του **{logged_in_school}**. Για καταχώρηση, πρέπει να επιλέξετε το σχολείο σας ('{logged_in_school}').")
+        st.markdown("---")
+    else:
+        st.info("Για να δείτε/χρησιμοποιήσετε τη φόρμα καταχώρησης, παρακαλώ συνδεθείτε ως εκπαιδευτικός από την πλαϊνή στήλη (sidebar).")
+        st.markdown("---")
 
     
     # Φιλτράρισμα βάσει του επιλεγμένου σχολείου
@@ -269,7 +366,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
         # 3β. Υποχρεωτική επιλογή Τμήματος
         selected_tmima = st.selectbox(
             "Επιλέξτε Τμήμα (Υποχρεωτικό):", 
-            options=["-- Επιλέξτε Τμήμα --"] + current_tmimata, # ΔΙΟΡΘΩΣΗ: Προσθήκη προεπιλεγμένης τιμής
+            options=["-- Επιλέξτε Τμήμα --"] + current_tmimata,
             key="tmima_selector"
         )
         
