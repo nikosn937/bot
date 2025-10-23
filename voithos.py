@@ -269,112 +269,115 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
         # 3β. Υποχρεωτική επιλογή Τμήματος
         selected_tmima = st.selectbox(
             "Επιλέξτε Τμήμα (Υποχρεωτικό):", 
-            options=current_tmimata,
+            options=["-- Επιλέξτε Τμήμα --"] + current_tmimata, # ΔΙΟΡΘΩΣΗ: Προσθήκη προεπιλεγμένης τιμής
             key="tmima_selector"
         )
+        
+        # ΕΚΚΙΝΗΣΗ ΛΟΓΙΚΗΣ ΕΜΦΑΝΙΣΗΣ ΜΟΝΟ ΑΝ ΕΧΕΙ ΕΠΙΛΕΓΕΙ ΕΓΚΥΡΟ ΤΜΗΜΑ
+        if selected_tmima and selected_tmima != "-- Επιλέξτε Τμήμα --": 
 
-        # 4. ΤΕΛΙΚΟ ΦΙΛΤΡΑΡΙΣΜΑ DF ανά ΤΜΗΜΑ
-        filtered_df = filtered_df_school[filtered_df_school['Tmima'] == selected_tmima]
+            # 4. ΤΕΛΙΚΟ ΦΙΛΤΡΑΡΙΣΜΑ DF ανά ΤΜΗΜΑ
+            filtered_df = filtered_df_school[filtered_df_school['Tmima'] == selected_tmima]
 
-        # ----------------------------------------------------------------------
-        # ΕΜΦΑΝΙΣΗ ΤΕΛΕΥΤΑΙΩΝ 2 ΗΜΕΡΩΝ ΠΡΙΝ ΤΗΝ ΑΝΑΖΗΤΗΣΗ
-        # ----------------------------------------------------------------------
-        
-        # Υπολογισμός ημερομηνίας έναρξης: Σήμερα - 2 ημέρες
-        two_days_ago = datetime.now() - timedelta(days=2)
-        
-        # Φιλτράρισμα των δεδομένων του τμήματος για τις τελευταίες 2 ημέρες
-        recent_posts = filtered_df[filtered_df['Date'].dt.date >= two_days_ago.date()]
-        
-        if not recent_posts.empty:
-            st.header(f"📢 Πρόσφατες Ανακοινώσεις ({selected_tmima})")
-            st.info("Εμφανίζονται οι καταχωρήσεις των τελευταίων 2 ημερών.")
+            # ----------------------------------------------------------------------
+            # ΕΜΦΑΝΙΣΗ ΤΕΛΕΥΤΑΙΩΝ 2 ΗΜΕΡΩΝ ΠΡΙΝ ΤΗΝ ΑΝΑΖΗΤΗΣΗ
+            # ----------------------------------------------------------------------
             
-            # Ταξινόμηση των πρόσφατων δημοσιεύσεων (πιο πρόσφατη πρώτη)
-            recent_posts = recent_posts.sort_values(by='Date', ascending=False)
+            # Υπολογισμός ημερομηνίας έναρξης: Σήμερα - 2 ημέρες
+            two_days_ago = datetime.now() - timedelta(days=2)
             
-            # Rendering των πρόσφατων δημοσιεύσεων
-            for i, row in recent_posts.iterrows():
-                date_str = row['Date'].strftime(DATE_FORMAT)
-                header = f"**Καταχώρηση (Από: {date_str})**"
-                
-                if row['Type'].strip().lower() == 'link': 
-                    link_description = row['Info'].strip()
-                    link_url = row['URL'].strip()
-                    st.markdown(f"{header}: 🔗 [{link_description}](<{link_url}>) (Keyword: *{row['Keyword']}*)")
-                
-                elif row['Type'].strip().lower() == 'text':
-                    st.markdown(f"{header}: 💬 {row['Info']} (Keyword: *{row['Keyword']}*)")
-
-            st.markdown("---") # Διαχωριστική γραμμή πριν την αναζήτηση
-        else:
-            st.info(f"Δεν υπάρχουν πρόσφατες ανακοινώσεις (τελευταίες 2 ημέρες) για το τμήμα {selected_tmima}.")
-            st.markdown("---")
-
-        
-        st.header("🔍 Αναζήτηση Παλαιότερων Πληροφοριών")
-        st.info("Για να βρείτε κάτι συγκεκριμένο ή παλαιότερο, πληκτρολογήστε τη φράση-κλειδί (keyword) παρακάτω.")
-
-        # ----------------------------------------------------------------------
-        # ΣΥΝΕΧΕΙΑ ΤΗΣ ΛΟΓΙΚΗΣ ΑΝΑΖΗΤΗΣΗΣ
-        # ----------------------------------------------------------------------
-        
-        # Δημιουργία χαρτών αναζήτησης για τα φιλτραρισμένα δεδομένα
-        tag_to_keyword_map, keyword_to_data_map = create_search_maps(filtered_df)
-        current_available_keys = sorted(filtered_df['Keyword'].unique().tolist())
-        
-        # Εμφάνιση των διαθέσιμων Keywords
-        info_message = f"Διαθέσιμες φράσεις-κλειδιά: **{', '.join(current_available_keys)}**" if current_available_keys else "Δεν βρέθηκαν διαθέσιμες φράσεις-κλειδιά για αυτά τα κριτήρια."
-        st.info(info_message)
-
-        user_input = st.text_input(
-            'Τι θέλεις να μάθεις;', 
-            placeholder='Πληκτρολόγησε π.χ. εκδρομη, εργασια, βιβλια...'
-        )
-
-        if user_input and keyword_to_data_map:
-            # Λογική αναζήτησης 
-            search_tag = normalize_text(user_input)
-            matching_keywords = tag_to_keyword_map.get(search_tag, set())
+            # Φιλτράρισμα των δεδομένων του τμήματος για τις τελευταίες 2 ημέρες
+            recent_posts = filtered_df[filtered_df['Date'].dt.date >= two_days_ago.date()]
             
-            if matching_keywords:
-                all_results = []
+            if not recent_posts.empty:
+                st.header(f"📢 Πρόσφατες Ανακοινώσεις ({selected_tmima})")
+                st.info("Εμφανίζονται οι καταχωρήσεις των τελευταίων 2 ημερών.")
                 
-                for keyword in matching_keywords:
-                    # Το zip έχει 6 στοιχεία: (Info, URL, Type, Date, School, Tmima)
-                    all_results.extend(keyword_to_data_map.get(keyword, [])) 
+                # Ταξινόμηση των πρόσφατων δημοσιεύσεων (πιο πρόσφατη πρώτη)
+                recent_posts = recent_posts.sort_values(by='Date', ascending=False)
+                
+                # Rendering των πρόσφατων δημοσιεύσεων
+                for i, row in recent_posts.iterrows():
+                    date_str = row['Date'].strftime(DATE_FORMAT)
+                    header = f"**Καταχώρηση (Από: {date_str})**"
+                    
+                    if row['Type'].strip().lower() == 'link': 
+                        link_description = row['Info'].strip()
+                        link_url = row['URL'].strip()
+                        st.markdown(f"{header}: 🔗 [{link_description}](<{link_url}>) (Keyword: *{row['Keyword']}*)")
+                    
+                    elif row['Type'].strip().lower() == 'text':
+                        st.markdown(f"{header}: 💬 {row['Info']} (Keyword: *{row['Keyword']}*)")
 
-                st.success(f"Βρέθηκαν **{len(all_results)}** πληροφορίες για το '{user_input}'.")
-                
-                # Ταξινόμηση των αποτελεσμάτων αναζήτησης βάσει ημερομηνίας
-                results_list = []
-                for info, url, item_type, date_obj, school, tmima in all_results:
-                    results_list.append((date_obj, info, url, item_type, school, tmima))
-                
-                results_list.sort(key=lambda x: x[0], reverse=True) # Ταξινόμηση ανά ημερομηνία (πιο πρόσφατο πρώτο)
-
-                for i, (date_obj, info, url, item_type, school, tmima) in enumerate(results_list, 1):
-                    date_str = date_obj.strftime(DATE_FORMAT) if pd.notna(date_obj) else "Άγνωστη Ημ/νία"
-                    header = f"**Αποτέλεσμα {i}** (Ημ/νία: {date_str})"
-                    
-                    if item_type.strip().lower() == 'link': 
-                        link_description = info.strip()
-                        link_url = url.strip()
-                        if link_url:
-                            st.markdown(f"{header}: 🔗 [{link_description}](<{link_url}>)") 
-                        else:
-                            st.markdown(f"{header}: ⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}")
-                    
-                    elif item_type.strip().lower() == 'text':
-                        st.markdown(f"{header}: 💬 {info}")
-                    
-                    else:
-                        st.markdown(f"{header}: Άγνωστος Τύπος Καταχώρησης. {info}")
-                        
+                st.markdown("---") # Διαχωριστική γραμμή πριν την αναζήτηση
             else:
-                st.warning(f"Δεν βρέθηκε απάντηση για το: '{user_input}'.")
+                st.info(f"Δεν υπάρχουν πρόσφατες ανακοινώσεις (τελευταίες 2 ημέρες) για το τμήμα {selected_tmima}.")
+                st.markdown("---")
 
-        st.markdown("---")
+            
+            st.header("🔍 Αναζήτηση Παλαιότερων Πληροφοριών")
+            st.info("Για να βρείτε κάτι συγκεκριμένο ή παλαιότερο, πληκτρολογήστε τη φράση-κλειδί (keyword) παρακάτω.")
+
+            # ----------------------------------------------------------------------
+            # ΣΥΝΕΧΕΙΑ ΤΗΣ ΛΟΓΙΚΗΣ ΑΝΑΖΗΤΗΣΗΣ
+            # ----------------------------------------------------------------------
+            
+            # Δημιουργία χαρτών αναζήτησης για τα φιλτραρισμένα δεδομένα
+            tag_to_keyword_map, keyword_to_data_map = create_search_maps(filtered_df)
+            current_available_keys = sorted(filtered_df['Keyword'].unique().tolist())
+            
+            # Εμφάνιση των διαθέσιμων Keywords
+            info_message = f"Διαθέσιμες φράσεις-κλειδιά: **{', '.join(current_available_keys)}**" if current_available_keys else "Δεν βρέθηκαν διαθέσιμες φράσεις-κλειδιά για αυτά τα κριτήρια."
+            st.info(info_message)
+
+            user_input = st.text_input(
+                'Τι θέλεις να μάθεις;', 
+                placeholder='Πληκτρολόγησε π.χ. εκδρομη, εργασια, βιβλια...'
+            )
+
+            if user_input and keyword_to_data_map:
+                # Λογική αναζήτησης 
+                search_tag = normalize_text(user_input)
+                matching_keywords = tag_to_keyword_map.get(search_tag, set())
+                
+                if matching_keywords:
+                    all_results = []
+                    
+                    for keyword in matching_keywords:
+                        # Το zip έχει 6 στοιχεία: (Info, URL, Type, Date, School, Tmima)
+                        all_results.extend(keyword_to_data_map.get(keyword, [])) 
+
+                    st.success(f"Βρέθηκαν **{len(all_results)}** πληροφορίες για το '{user_input}'.")
+                    
+                    # Ταξινόμηση των αποτελεσμάτων αναζήτησης βάσει ημερομηνίας
+                    results_list = []
+                    for info, url, item_type, date_obj, school, tmima in all_results:
+                        results_list.append((date_obj, info, url, item_type, school, tmima))
+                    
+                    results_list.sort(key=lambda x: x[0], reverse=True) # Ταξινόμηση ανά ημερομηνία (πιο πρόσφατο πρώτο)
+
+                    for i, (date_obj, info, url, item_type, school, tmima) in enumerate(results_list, 1):
+                        date_str = date_obj.strftime(DATE_FORMAT) if pd.notna(date_obj) else "Άγνωστη Ημ/νία"
+                        header = f"**Αποτέλεσμα {i}** (Ημ/νία: {date_str})"
+                        
+                        if item_type.strip().lower() == 'link': 
+                            link_description = info.strip()
+                            link_url = url.strip()
+                            if link_url:
+                                st.markdown(f"{header}: 🔗 [{link_description}](<{link_url}>)") 
+                            else:
+                                st.markdown(f"{header}: ⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}")
+                        
+                        elif item_type.strip().lower() == 'text':
+                            st.markdown(f"{header}: 💬 {info}")
+                        
+                        else:
+                            st.markdown(f"{header}: Άγνωστος Τύπος Καταχώρησης. {info}")
+                            
+                else:
+                    st.warning(f"Δεν βρέθηκε απάντηση για το: '{user_input}'.")
+
+            st.markdown("---")
 
 
 elif full_df.empty:
