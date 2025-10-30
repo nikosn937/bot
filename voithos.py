@@ -312,14 +312,14 @@ def teacher_login(df_users):
 st.set_page_config(page_title="Βοηθός Τάξης", layout="centered")
 
 # ΟΡΙΣΤΕ ΤΗΝ RAW URL ΓΙΑ ΤΟ ΛΟΓΟΤΥΠΟ
-RAW_IMAGE_URL = "https://raw.githubusercontent.com/nikosn937/bot/b0c4fd1190a186ba1bd6c322c0f23c5c2effbb24/ClassBot.png"
+RAW_IMAGE_URL = "https://raw.githubusercontent.com/nikosn937/bot/main/ClassBot.gif"
 
 # Δημιουργία δύο στηλών: η πρώτη (1/5) για το λογότυπο, η δεύτερη (4/5) για τον τίτλο
 col1, col2 = st.columns([1, 4])
 
 with col1:
     # Εμφάνιση της εικόνας
-    st.image(RAW_IMAGE_URL, width=100)
+    st.image(RAW_IMAGE_URL, width=200)
 
 with col2:
     # Εμφάνιση του τίτλου
