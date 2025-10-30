@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from datetime import datetime, timedelta
-import re 
+import re
 
 # --------------------------------------------------------------------------------
 # 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS)
