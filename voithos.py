@@ -389,7 +389,7 @@ def manage_user_posts(df, logged_in_userid):
 
             # Βρίσκουμε την αρχική 0-based index της γραμμής στο πλήρες DF 
             # Η gspread row index (1-based) είναι η Pandas index + 2
-            gspread_row_index = row_to_delete.index[0] + 2
+            gspread_row_index = int(row_to_delete.index[0]) + 2
 
             try:
                 sh = gc.open(SHEET_NAME)
