@@ -45,9 +45,9 @@ def get_tags_from_keyword(keyword):
 
 @st.cache_data(ttl=600)
 def load_data():
-    """Φορτώνει, καθαρίζει και ταξινομεί δεδομένα από το ενιαίο Google Sheet (Main Data Sheet)."""
+    """Φορτώνει, καθαρίζει και ταξινομεί δεδομένα από το ενιαίο Google Sheet (ClassBot)."""
     if gc is None:
-        return pd.DataFrame(), [], []
+        return pd.DataFrame(), []
 
     try:
         sh = gc.open(SHEET_NAME)
@@ -59,22 +59,21 @@ def load_data():
         df = pd.DataFrame(data[1:], columns=headers) 
         df.columns = df.columns.str.strip()
         
-        # Προσθήκη 'UserId' στη λίστα των απαιτούμενων στηλών, αν και μπορεί να είναι κενή
+        # ΠΡΟΣΟΧΗ: Ελέγχουμε τις βασικές στήλες
         required_cols = ['Keyword', 'Info', 'URL', 'Type', 'Date', 'School', 'Tmima']
         if not all(col in df.columns for col in required_cols):
-            st.error(f"Σφάλμα δομής Sheet 'ClassBot': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)} (και UserId).")
-            return pd.DataFrame(), [], []
+            st.error(f"Σφάλμα δομής Sheet 'ClassBot': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)} και η στήλη 'UserId'.")
+            return pd.DataFrame(), []
         
         # Καθαρισμός/Επεξεργασία δεδομένων
         df = df.dropna(subset=['Keyword', 'Date', 'School', 'Tmima'], how='any') 
         df['Date'] = pd.to_datetime(df['Date'], format=DATE_FORMAT, errors='coerce')
         df = df.dropna(subset=['Date'])
         
-        # Εξαγωγή διαθέσιμων Σχολείων δυναμικά (Tmima θα φορτωθούν από το ξεχωριστό sheet)
         available_schools = sorted(df['School'].unique().tolist()) if 'School' in df.columns else []
         
-        # Προσθήκη μοναδικού ID για διαγραφή/διόρθωση
-        df['Internal_ID'] = df.index + 1
+        # Προσθήκη μοναδικού ID για διαγραφή/διόρθωση (Αντιστοιχεί στην index της σειράς στο sheet)
+        df['Internal_ID'] = df.index + 1 
         
         return df, available_schools
         
@@ -84,7 +83,7 @@ def load_data():
 
 @st.cache_data(ttl=600)
 def load_users_data():
-    """Φορτώνει τα δεδομένα χρηστών (UserId, Username, Password, School) από το sheet 'Χρήστες'."""
+    """Φορτώνει τα δεδομένα χρηστών (UserId, School, Name, UserName, Password) από το sheet 'Χρήστες'."""
     if gc is None:
         return pd.DataFrame()
 
@@ -97,8 +96,8 @@ def load_users_data():
         df_users = pd.DataFrame(data[1:], columns=headers)
         df_users.columns = df_users.columns.str.strip()
 
-        # Προσθήκη 'UserId'
-        required_cols = ['UserId', 'School', 'UserName', 'Password']
+        # Η νέα δομή με UserId
+        required_cols = ['UserId', 'School', 'UserName', 'Password'] 
         if not all(col in df_users.columns for col in required_cols):
             st.error(f"Σφάλμα δομής Sheet 'Χρήστες': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}.")
             return pd.DataFrame()
@@ -128,7 +127,7 @@ def load_tmima_data(school_name: str) -> List[str]:
         
         required_cols = ['School', 'Tmima']
         if not all(col in df_tmima.columns for col in required_cols):
-            st.error(f"Σφάλμα δομής Sheet 'Σχολεία': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}.")
+            st.warning(f"Σφάλμα δομής Sheet 'Σχολεία': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}. Συνεχίζουμε με χειροκίνητη εισαγωγή Τμήματος.")
             return []
 
         # Φιλτράρισμα βάσει Σχολείου και επιστροφή μοναδικών Τμημάτων
@@ -137,19 +136,18 @@ def load_tmima_data(school_name: str) -> List[str]:
         
     except gspread.exceptions.WorksheetNotFound:
         st.warning("⚠️ Προσοχή: Δεν βρέθηκε το worksheet 'Σχολεία'. Η καταχώρηση Τμήματος θα γίνει χειροκίνητα.")
-        return [] # Επιστρέφουμε κενή λίστα ώστε να γίνει χειροκίνητη εισαγωγή
+        return [] 
     except Exception as e:
         st.error(f"Σφάλμα φόρτωσης δεδομένων Τμημάτων από το sheet 'Σχολεία'. Λεπτομέρειες: {e}")
         return []
 
 def create_search_maps(df):
     """Δημιουργεί τους χάρτες αναζήτησης μετά το φιλτράρισμα."""
-    # ... (Η λογική παραμένει ίδια)
     df_sorted = df.sort_values(by=['Keyword', 'Date'], ascending=[True, False])
     
-    # Το zip περιλαμβάνει 7 στοιχεία: (Info, URL, Type, Date, School, Tmima, Internal_ID)
+    # Το zip περιλαμβάνει 8 στοιχεία: (Info, URL, Type, Date, School, Tmima, UserId, Internal_ID)
     keyword_to_data_map = df_sorted.groupby('Keyword').apply(
-        lambda x: list(zip(x['Info'], x['URL'], x['Type'], x['Date'], x['School'], x['Tmima'], x['Internal_ID']))
+        lambda x: list(zip(x['Info'], x['URL'], x['Type'], x['Date'], x['School'], x['Tmima'], x.get('UserId', ''), x['Internal_ID']))
     ).to_dict()
 
     tag_to_keyword_map = {}
@@ -268,16 +266,15 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
                 # ΕΛΕΓΧΟΣ ΕΓΚΥΡΟΤΗΤΑΣ ΤΜΗΜΑΤΟΣ (αν δεν έγινε επιλογή)
                 tmima_pattern = re.compile(r'^[Α-Ω0-9]+$')
 
-                if not tmima_pattern.match(final_tmima):
-                    st.error("⚠️ Σφάλμα Τμήματος: Το πεδίο 'Τμήμα' πρέπει να περιέχει μόνο **Ελληνικούς** κεφαλαίους χαρακτήρες (Α, Β, Γ...) και **αριθμούς** (1, 2, 3...), χωρίς κενά. Διορθώστε την εισαγωγή σας.")
+                if not tmima_pattern.match(final_tmima) or final_tmima == "":
+                    st.error("⚠️ Σφάλμα Τμήματος: Το πεδίο 'Τμήμα' είναι κενό ή περιέχει μη επιτρεπτούς χαρακτήρες. Χρησιμοποιήστε μόνο Ελληνικούς κεφαλαίους (Α-Ω) και αριθμούς (0-9).")
                     st.stop()
                 
                 # Έλεγχος πληρότητας
-                if not new_keyword or not new_info or not new_school or not final_tmima or (st.session_state.entry_type == 'Link' and not final_url):
+                if not new_keyword or not new_info or not new_school or (st.session_state.entry_type == 'Link' and not final_url):
                     st.error("Παρακαλώ συμπληρώστε όλα τα πεδία (Φράση-Κλειδί, Περιγραφή, Σχολείο, Τμήμα και Σύνδεσμο αν είναι Link).")
                 else:
-                    # ΠΡΟΣΟΧΗ: Πρέπει να βρούμε τη σωστή σειρά των στηλών του ClassBot sheet
-                    # Υποθέτουμε τη σειρά: Keyword, Info, URL, Type, Date, School, Tmima, UserId
+                    # Υποθέτουμε τη σειρά στο ClassBot Sheet: Keyword, Info, URL, Type, Date, School, Tmima, UserId
                     new_entry_list = [
                         new_keyword.strip(), 
                         new_info.strip(), 
@@ -286,7 +283,7 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
                         new_date_str,
                         new_school,  
                         final_tmima,  
-                        logged_in_userid # **ΝΕΟ:** Καταχώρηση του UserId
+                        logged_in_userid # **UserId:** Καταχώρηση του μοναδικού ID χρήστη
                     ]
                     submit_entry(new_entry_list)
 
@@ -327,7 +324,7 @@ def teacher_login(df_users):
             if not user_found.empty:
                 st.session_state.authenticated = True
                 st.session_state.logged_in_school = user_found['School'].iloc[0].strip()
-                st.session_state.logged_in_userid = user_found['UserId'].iloc[0].strip() # **ΝΕΟ:** Αποθήκευση UserId
+                st.session_state.logged_in_userid = user_found['UserId'].iloc[0].strip() # **Διαβάζουμε το UserId**
                 st.success("Επιτυχής σύνδεση!")
                 st.rerun() 
             else:
@@ -343,18 +340,17 @@ def teacher_login(df_users):
 
 def manage_user_posts(df, logged_in_userid):
     """Εμφανίζει και επιτρέπει τη διαχείριση (διόρθωση/διαγραφή) των καταχωρήσεων του χρήστη."""
-
-    # Φιλτράρισμα καταχωρήσεων βάσει του συνδεδεμένου UserId
+    
+    # Χρησιμοποιούμε τη στήλη 'UserId' για το φιλτράρισμα, όπως καταχωρήθηκε στη φόρμα
     user_posts = df[df.get('UserId', '').astype(str).str.strip() == logged_in_userid]
     
     if user_posts.empty:
-        st.info("Δεν βρέθηκαν καταχωρήσεις για τον δικό σας χρήστη (UserId).")
+        st.info(f"Δεν βρέθηκαν καταχωρήσεις για τον δικό σας χρήστη (UserId: {logged_in_userid}).")
         return
 
-    st.header("✏️ Διαχείριση Καταχωρήσεων")
+    st.header("✏️ Διαχείριση Καταχώρησης")
     st.info(f"Εμφανίζονται οι **{len(user_posts)}** καταχωρήσεις σας. Μπορείτε να τις διαγράψετε (μόνο).")
     
-    # Ταξινόμηση ανά ημερομηνία για καλύτερη επισκόπηση
     user_posts = user_posts.sort_values(by='Date', ascending=False)
     
     # Δημιουργία λίστας για την επιλογή διαγραφής
@@ -371,7 +367,8 @@ def manage_user_posts(df, logged_in_userid):
         
         selected_post_str = st.selectbox(
             "Επιλέξτε την καταχώρηση προς διαγραφή:",
-            options=["-- Επιλέξτε Καταχώρηση --"] + post_options
+            options=["-- Επιλέξτε Καταχώρηση --"] + post_options,
+            key="delete_select"
         )
         
         delete_submitted = st.form_submit_button("Διαγραφή Επιλεγμένης Καταχώρησης 🗑️")
@@ -384,30 +381,20 @@ def manage_user_posts(df, logged_in_userid):
                 st.error("Σφάλμα στην ανάγνωση του Internal ID.")
                 st.stop()
             
-            # Εύρεση της σειράς που αντιστοιχεί στο ID
             row_to_delete = df[df['Internal_ID'] == post_id]
             
             if row_to_delete.empty:
                 st.error("Η καταχώρηση δεν βρέθηκε στο DataFrame.")
                 st.stop()
 
-            # Η θέση της σειράς στο Google Sheet είναι η 0-based index + 2 (για τις επικεφαλίδες και το 0-index)
-            # ΣΗΜΕΙΩΣΗ: Αυτό είναι **πολύ ευαίσθητο** σε αλλαγές στο Sheet. 
-            # Η καλύτερη προσέγγιση είναι να χρησιμοποιούμε την index του Pandas DF + 2
-            # Επειδή όμως το gspread διαβάζει τα πάντα ως κείμενο, η σωστή θέση είναι η αρχική index.
-            # Για λόγους ασφάλειας και επειδή δεν έχουμε τον gspread row index, 
-            # χρησιμοποιούμε την πιο ασφαλή μέθοδο της εύρεσης βάσει περιεχομένου, 
-            # αλλά για Streamlit, η πιο γρήγορη λύση είναι η index του DF + 2.
-            
-            # Βρίσκουμε την αρχική 0-based index της γραμμής στο πλήρες DF (χωρίς τα headers)
-            # Το gspread row index (1-based) είναι η Pandas index + 2
+            # Βρίσκουμε την αρχική 0-based index της γραμμής στο πλήρες DF 
+            # Η gspread row index (1-based) είναι η Pandas index + 2
             gspread_row_index = row_to_delete.index[0] + 2
 
             try:
                 sh = gc.open(SHEET_NAME)
                 ws = sh.get_worksheet(0)
                 
-                # Διαγραφή της σειράς
                 ws.delete_rows(gspread_row_index)
                 
                 st.cache_data.clear() 
@@ -567,13 +554,14 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                     all_results = []
 
                     for keyword in matching_keywords:
-                        # Το zip έχει 7 στοιχεία: (Info, URL, Type, Date, School, Tmima, Internal_ID)
+                        # Το zip έχει 8 στοιχεία: (Info, URL, Type, Date, School, Tmima, UserId, Internal_ID)
                         all_results.extend(keyword_to_data_map.get(keyword, []))
 
                     st.success(f"Βρέθηκαν **{len(all_results)}** πληροφορίες για το '{user_input}'.")
 
                     results_list = []
-                    for info, url, item_type, date_obj, school, tmima, _ in all_results:
+                    # Αγνοούμε UserId και Internal_ID για την εμφάνιση
+                    for info, url, item_type, date_obj, school, tmima, _, _ in all_results:
                         results_list.append((date_obj, info, url, item_type, school, tmima))
 
                     results_list.sort(key=lambda x: x[0], reverse=True)
@@ -603,7 +591,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
 
 
 elif full_df.empty:
-    st.warning("Παρακαλώ συμπληρώστε το Google Sheet με τις στήλες 'School' και 'Tmima' στο φύλλο 'ClassBot', καθώς και τα φύλλα 'Χρήστες' και 'Σχολεία'.")
+    st.warning("Παρακαλώ συμπληρώστε το Google Sheet με τις στήλες 'School' και 'Tmima' στο φύλλο 'ClassBot', καθώς και τα φύλλα 'Χρήστες' (UserId, School, Name, UserName, Password) και 'Σχολεία'.")
 else:
     st.info("Παρακαλώ επιλέξτε Σχολείο για να ξεκινήσει η αναζήτηση.")
 
