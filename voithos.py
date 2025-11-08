@@ -4,6 +4,7 @@ import gspread
 from datetime import datetime, timedelta
 import re
 from typing import List
+from urllib.parse import quote_plus # Προστέθηκε για τη διόρθωση των links στο HTML
 
 # --------------------------------------------------------------------------------
 # 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS) & CSS
@@ -749,7 +750,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
             filtered_df = filtered_df_school[filtered_df_school['Tmima'] == selected_tmima]
 
             # ----------------------------------------------------------------------
-            # ΕΜΦΑΝΙΣΗ ΤΕΛΕΥΤΑΙΩΝ 2 ΗΜΕΡΩΝ (Με χρήση CSS Card Styling)
+            # ΕΜΦΑΝΙΣΗ ΤΕΛΕΥΤΑΙΩΝ 2 ΗΜΕΡΩΝ (Με χρήση CSS Card Styling & Link Fix)
             # ----------------------------------------------------------------------
 
             two_days_ago = datetime.now() - timedelta(days=2)
@@ -767,13 +768,18 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                     item_type = row['Type'].strip().lower()
 
                     # Επιλογή κλάσης CSS βάσει τύπου
-                    css_class = 'info-card info-card-link' if item_type == 'link' else 'info-card info-card-text'
+                    css_class = 'info-card'
+                    content = ""
                     
                     if item_type == 'link':
+                        css_class += ' info-card-link'
                         link_description = row['Info'].strip()
                         link_url = row['URL'].strip()
-                        content = f"🔗 **Σύνδεσμος:** [<span style='color: #1A5276;'>{link_description}</span>](<{link_url}>)"
+                        # ΔΙΟΡΘΩΣΗ: Χρησιμοποιούμε quote_plus για να εξασφαλίσουμε σωστή λειτουργία του link στο HTML
+                        safe_url = quote_plus(link_url, safe=':/') 
+                        content = f"🔗 **Σύνδεσμος:** [<span style='color: #1A5276;'>{link_description}</span>](<{safe_url}>)"
                     elif item_type == 'text':
+                        css_class += ' info-card-text'
                         content = f"💬 **Περιγραφή:** {row['Info']}"
 
                     # Δόμηση της κάρτας HTML
@@ -796,7 +802,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
             st.info("Για να βρείτε κάτι συγκεκριμένο ή παλαιότερο, πληκτρολογήστε τη φράση-κλειδί (keyword) παρακάτω.")
 
             # ----------------------------------------------------------------------
-            # ΛΟΓΙΚΗ ΑΝΑΖΗΤΗΣΗΣ (Με χρήση CSS Card Styling)
+            # ΛΟΓΙΚΗ ΑΝΑΖΗΤΗΣΗΣ (Με χρήση CSS Card Styling & Link Fix)
             # ----------------------------------------------------------------------
 
             tag_to_keyword_map, keyword_to_data_map = create_search_maps(filtered_df)
@@ -824,13 +830,14 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                     st.success(f"Βρέθηκαν **{len(all_results)}** πληροφορίες για το '{user_input}'.")
 
                     results_list = []
-                    # Αγνοούμε UserId και Internal_ID για την εμφάνιση
+                    # Αγνοούμε UserId και Internal_ID για την εμφάνιση. Προσθέτουμε πίσω το keyword για εμφάνιση.
                     for info, url, item_type, date_obj, school, tmima, _, _ in all_results:
+                        # Στοιχείο 7: Keyword
                         results_list.append((date_obj, info, url, item_type, school, tmima, keyword))
 
                     results_list.sort(key=lambda x: x[0], reverse=True)
 
-                    for i, (date_obj, info, url, item_type, school, tmima, keyword) in enumerate(results_list, 1):
+                    for i, (date_obj, info, url, item_type, school, tmima, keyword_result) in enumerate(results_list, 1):
                         date_str = date_obj.strftime(DATE_FORMAT) if pd.notna(date_obj) else "Άγνωστη Ημ/νία"
                         
                         item_type_clean = item_type.strip().lower()
@@ -842,7 +849,9 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                             link_description = info.strip()
                             link_url = url.strip()
                             if link_url:
-                                content = f"🔗 **Σύνδεσμος:** [<span style='color: #1A5276;'>{link_description}</span>](<{link_url}>)"
+                                # ΔΙΟΡΘΩΣΗ: Χρησιμοποιούμε quote_plus για να εξασφαλίσουμε σωστή λειτουργία του link στο HTML
+                                safe_url = quote_plus(link_url, safe=':/')
+                                content = f"🔗 **Σύνδεσμος:** [<span style='color: #1A5276;'>{link_description}</span>](<{safe_url}>)"
                             else:
                                 content = f"⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}"
 
@@ -857,7 +866,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                         <div class="{css_class}">
                             <span class="card-date">🗓️ {date_str}</span>
                             {content}
-                            <div class="card-keyword">🔑 Keyword: {keyword}</div>
+                            <div class="card-keyword">🔑 Keyword: {keyword_result}</div>
                         </div>
                         """
                         st.markdown(card_html, unsafe_allow_html=True)
