@@ -6,7 +6,7 @@ import re
 from typing import List
 
 # --------------------------------------------------------------------------------
-# 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS)
+# 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS) & CSS
 # --------------------------------------------------------------------------------
 
 @st.cache_resource
@@ -19,12 +19,60 @@ def get_gspread_client():
         gc = gspread.service_account_from_dict(service_account_info)
         return gc
     except Exception as e:
-        st.error(f"Σφάλμα σύνδεσης gspread. Ελέγξτε τα secrets.toml και τα δικαιώματα. Λεπτομέρειες: {e}")
+        # st.error(f"Σφάλμα σύνδεσης gspread. Ελέγξτε τα secrets.toml και τα δικαιώματα. Λεπτομέρειες: {e}")
         return None
 
 gc = get_gspread_client()
 SHEET_NAME = st.secrets["sheet_name"]
 DATE_FORMAT = '%d/%m/%Y'
+
+def apply_custom_css():
+    """Εφαρμόζει Custom CSS για βελτίωση της εμφάνισης."""
+    st.markdown("""
+        <style>
+            /* Κεντρική ρύθμιση εμφάνισης */
+            .main-header {
+                color: #2E86C1; /* Μπλε χρώμα */
+                font-size: 2.2em;
+                border-bottom: 2px solid #D6EAF8;
+                padding-bottom: 10px;
+                margin-top: -20px;
+            }
+            /* Styling για τις κάρτες ανακοινώσεων */
+            .info-card {
+                padding: 15px;
+                margin-bottom: 15px;
+                border-radius: 8px;
+                box-shadow: 0 4px 8px 0 rgba(0,0,0,0.1);
+                border-left: 5px solid #2E86C1; /* Μπλε μπάρα για έμφαση */
+                background-color: #FBFCFC; /* Πολύ ανοιχτό γκρι/μπλε */
+            }
+            .info-card-link {
+                border-left: 5px solid #28B463; /* Πράσινη μπάρα για Link */
+            }
+            .info-card-text {
+                border-left: 5px solid #F39C12; /* Πορτοκαλί μπάρα για Text */
+            }
+            .card-date {
+                font-size: 0.9em;
+                color: #5D6D7E;
+                float: right;
+            }
+            .card-keyword {
+                font-style: italic;
+                color: #AAB7B8;
+                font-size: 0.8em;
+                margin-top: 5px;
+            }
+            /* Εμφάνιση του st.error σε πιο ευγενικό κίτρινο για warnings */
+            div.stAlert > div:nth-child(1) {
+                border-left: 10px solid #F1C40F !important;
+                background-color: #FEF9E7 !important;
+                color: #7D6608 !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
 
 # --------------------------------------------------------------------------------
 # 1. ΒΟΗΘΗΤΙΚΕΣ ΣΥΝΑΡΤΗΣΕΙΣ - ΦΟΡΤΩΣΗ ΔΕΔΟΜΕΝΩΝ
@@ -73,7 +121,6 @@ def load_data():
         available_schools = sorted(df['School'].unique().tolist()) if 'School' in df.columns else []
         
         # Προσθήκη μοναδικού ID για διαγραφή/διόρθωση (Αντιστοιχεί στην index της σειράς στο sheet)
-        # Επειδή οι επικεφαλίδες είναι η σειρά 1, η index της Pandas (ξεκινά από 0) αντιστοιχεί στην gspread row index - 1
         df['Internal_ID'] = df.index + 1 
         
         return df, available_schools
@@ -107,7 +154,7 @@ def load_users_data():
         return df_users
 
     except Exception as e:
-        st.error(f"Σφάλμα φόρτωσης δεδομένων χρηστών. Λεπτομέρειες: {e}")
+        # st.error(f"Σφάλμα φόρτωσης δεδομένων χρηστών. Λεπτομέρειες: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=600)
@@ -138,7 +185,7 @@ def load_tmima_data(school_name: str) -> List[str]:
         st.warning("⚠️ Προσοχή: Δεν βρέθηκε το worksheet 'Σχολεία'. Η καταχώρηση Τμήματος θα γίνει χειροκίνητα.")
         return []
     except Exception as e:
-        st.error(f"Σφάλμα φόρτωσης δεδομένων Τμημάτων από το sheet 'Σχολεία'. Λεπτομέρειες: {e}")
+        # st.error(f"Σφάλμα φόρτωσης δεδομένων Τμημάτων από το sheet 'Σχολεία'. Λεπτομέρειες: {e}")
         return []
 
 def create_search_maps(df):
@@ -211,7 +258,6 @@ def update_entry(row_index: int, updated_list: list):
         # Ενημέρωση της σειράς με τα νέα δεδομένα (χρησιμοποιείται η ws.update(cell, value))
         # Το gspread.update(range_name, values) παίρνει μια λίστα λιστών (για μία σειρά)
         ws.update(f'A{gspread_row_index}', [updated_list], value_input_option='USER_ENTERED') 
-        # Χρησιμοποιούμε value_input_option='USER_ENTERED' για να διατηρήσουμε τις μορφοποιήσεις
 
         # Καθαρισμός cache και επανεκτέλεση
         st.cache_data.clear() 
@@ -605,6 +651,9 @@ def manage_user_posts(df, logged_in_userid):
 
 st.set_page_config(page_title="Βοηθός Τάξης", layout="centered")
 
+# Εφαρμογή του Custom CSS
+apply_custom_css()
+
 # ΟΡΙΣΤΕ ΤΗΝ RAW URL ΓΙΑ ΤΟ ΛΟΓΟΤΥΠΟ
 RAW_IMAGE_URL = "https://raw.githubusercontent.com/nikosn937/bot/main/ClassBot.gif"
 
@@ -612,10 +661,10 @@ RAW_IMAGE_URL = "https://raw.githubusercontent.com/nikosn937/bot/main/ClassBot.g
 col1, col2 = st.columns([1, 4])
 
 with col1:
-    st.image(RAW_IMAGE_URL, width=200)
+    st.image(RAW_IMAGE_URL, width=150)
 
 with col2:
-    st.markdown("## Ψηφιακός Βοηθός Τάξης")
+    st.markdown("<h2 class='main-header'>Ψηφιακός Βοηθός Τάξης</h2>", unsafe_allow_html=True)
     st.caption("Steam Project")
 
 st.markdown("---") 
@@ -700,29 +749,42 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
             filtered_df = filtered_df_school[filtered_df_school['Tmima'] == selected_tmima]
 
             # ----------------------------------------------------------------------
-            # ΕΜΦΑΝΙΣΗ ΤΕΛΕΥΤΑΙΩΝ 2 ΗΜΕΡΩΝ
+            # ΕΜΦΑΝΙΣΗ ΤΕΛΕΥΤΑΙΩΝ 2 ΗΜΕΡΩΝ (Με χρήση CSS Card Styling)
             # ----------------------------------------------------------------------
 
             two_days_ago = datetime.now() - timedelta(days=2)
             recent_posts = filtered_df[filtered_df['Date'].dt.date >= two_days_ago.date()]
 
             if not recent_posts.empty:
-                st.header(f"📢 Πρόσφατες Ανακοινώσεις ({selected_tmima})")
+                st.markdown(f"## 📢 Πρόσφατες Ανακοινώσεις ({selected_tmima})")
                 st.info("Εμφανίζονται οι καταχωρήσεις των τελευταίων 2 ημερών.")
 
                 recent_posts = recent_posts.sort_values(by='Date', ascending=False)
 
-                for i, row in recent_posts.iterrows():
+                for _, row in recent_posts.iterrows():
                     date_str = row['Date'].strftime(DATE_FORMAT)
-                    header = f"**Καταχώρηση (Από: {date_str})**"
+                    keyword = row['Keyword']
+                    item_type = row['Type'].strip().lower()
 
-                    if row['Type'].strip().lower() == 'link':
+                    # Επιλογή κλάσης CSS βάσει τύπου
+                    css_class = 'info-card info-card-link' if item_type == 'link' else 'info-card info-card-text'
+                    
+                    if item_type == 'link':
                         link_description = row['Info'].strip()
                         link_url = row['URL'].strip()
-                        st.markdown(f"{header}: 🔗 [{link_description}](<{link_url}>) (Keyword: *{row['Keyword']}*)")
+                        content = f"🔗 **Σύνδεσμος:** [<span style='color: #1A5276;'>{link_description}</span>](<{link_url}>)"
+                    elif item_type == 'text':
+                        content = f"💬 **Περιγραφή:** {row['Info']}"
 
-                    elif row['Type'].strip().lower() == 'text':
-                        st.markdown(f"{header}: 💬 {row['Info']} (Keyword: *{row['Keyword']}*)")
+                    # Δόμηση της κάρτας HTML
+                    card_html = f"""
+                    <div class="{css_class}">
+                        <span class="card-date">🗓️ {date_str}</span>
+                        {content}
+                        <div class="card-keyword">🔑 Keyword: {keyword}</div>
+                    </div>
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
 
                 st.markdown("---") 
             else:
@@ -730,11 +792,11 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                 st.markdown("---")
 
 
-            st.header("🔍 Αναζήτηση Παλαιότερων Πληροφοριών")
+            st.markdown("## 🔍 Αναζήτηση Παλαιότερων Πληροφοριών")
             st.info("Για να βρείτε κάτι συγκεκριμένο ή παλαιότερο, πληκτρολογήστε τη φράση-κλειδί (keyword) παρακάτω.")
 
             # ----------------------------------------------------------------------
-            # ΛΟΓΙΚΗ ΑΝΑΖΗΤΗΣΗΣ
+            # ΛΟΓΙΚΗ ΑΝΑΖΗΤΗΣΗΣ (Με χρήση CSS Card Styling)
             # ----------------------------------------------------------------------
 
             tag_to_keyword_map, keyword_to_data_map = create_search_maps(filtered_df)
@@ -764,27 +826,41 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                     results_list = []
                     # Αγνοούμε UserId και Internal_ID για την εμφάνιση
                     for info, url, item_type, date_obj, school, tmima, _, _ in all_results:
-                        results_list.append((date_obj, info, url, item_type, school, tmima))
+                        results_list.append((date_obj, info, url, item_type, school, tmima, keyword))
 
                     results_list.sort(key=lambda x: x[0], reverse=True)
 
-                    for i, (date_obj, info, url, item_type, school, tmima) in enumerate(results_list, 1):
+                    for i, (date_obj, info, url, item_type, school, tmima, keyword) in enumerate(results_list, 1):
                         date_str = date_obj.strftime(DATE_FORMAT) if pd.notna(date_obj) else "Άγνωστη Ημ/νία"
-                        header = f"**Αποτέλεσμα {i}** (Ημ/νία: {date_str})"
+                        
+                        item_type_clean = item_type.strip().lower()
+                        css_class = 'info-card'
+                        content = ""
 
-                        if item_type.strip().lower() == 'link':
+                        if item_type_clean == 'link':
+                            css_class += ' info-card-link'
                             link_description = info.strip()
                             link_url = url.strip()
                             if link_url:
-                                st.markdown(f"{header}: 🔗 [{link_description}](<{link_url}>)")
+                                content = f"🔗 **Σύνδεσμος:** [<span style='color: #1A5276;'>{link_description}</span>](<{link_url}>)"
                             else:
-                                st.markdown(f"{header}: ⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}")
+                                content = f"⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}"
 
-                        elif item_type.strip().lower() == 'text':
-                            st.markdown(f"{header}: 💬 {info}")
-
+                        elif item_type_clean == 'text':
+                            css_class += ' info-card-text'
+                            content = f"💬 **Περιγραφή:** {info}"
                         else:
-                            st.markdown(f"{header}: Άγνωστος Τύπος Καταχώρησης. {info}")
+                            content = f"Άγνωστος Τύπος Καταχώρησης. {info}"
+                        
+                        # Δόμηση της κάρτας HTML
+                        card_html = f"""
+                        <div class="{css_class}">
+                            <span class="card-date">🗓️ {date_str}</span>
+                            {content}
+                            <div class="card-keyword">🔑 Keyword: {keyword}</div>
+                        </div>
+                        """
+                        st.markdown(card_html, unsafe_allow_html=True)
 
                 else:
                     st.warning(f"Δεν βρέθηκε απάντηση για το: '{user_input}'.")
