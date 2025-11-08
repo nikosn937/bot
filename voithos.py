@@ -39,20 +39,21 @@ def apply_custom_css():
                 padding-bottom: 10px;
                 margin-top: -20px;
             }
-            /* Styling για τις κάρτες ανακοινώσεων */
+            /* Styling για τις κάρτες ανακοινώσεων (Light Mode Default) */
             .info-card {
                 padding: 15px;
                 margin-bottom: 15px;
                 border-radius: 8px;
                 box-shadow: 0 4px 8px 0 rgba(0,0,0,0.1);
                 border-left: 5px solid #2E86C1; /* Μπλε μπάρα για έμφαση */
-                background-color: #FBFCFC; /* Πολύ ανοιχτό γκρι/μπλε */
+                background-color: #FBFCFC; /* Πολύ ανοιχτό γκρι/μπλε (Φωτεινό) */
             }
+            /* Styling για τις μπάρες (παραμένει ίδιο) */
             .info-card-link {
-                border-left: 5px solid #28B463; /* Πράσινη μπάρα για Link */
+                border-left: 5px solid #28B463; 
             }
             .info-card-text {
-                border-left: 5px solid #F39C12; /* Πορτοκαλί μπάρα για Text */
+                border-left: 5px solid #F39C12; 
             }
             .card-date {
                 font-size: 0.9em;
@@ -71,6 +72,32 @@ def apply_custom_css():
                 background-color: #FEF9E7 !important;
                 color: #7D6608 !important;
             }
+
+            /* -------------------------------------------------------------------------- */
+            /* DARK MODE FIX: Χρησιμοποιούμε Media Query για να αλλάξουμε το φόντο */
+            /* -------------------------------------------------------------------------- */
+            @media (prefers-color-scheme: dark) {
+                .info-card {
+                    /* Πιο σκούρο φόντο για να φαίνεται το ανοιχτόχρωμο κείμενο του Dark Mode */
+                    background-color: #1a1a1a; /* Σκούρο γκρι/μαύρο */
+                    box-shadow: 0 4px 8px 0 rgba(255,255,255,0.1); /* Λευκή σκιά για Dark Mode */
+                }
+                .card-date, .card-keyword {
+                     /* Διατηρούμε το κείμενο ευανάγνωστο στο Dark Mode */
+                    color: #999999; 
+                }
+                div.stAlert > div:nth-child(1) {
+                    /* Προσαρμογή του warning στο Dark Mode */
+                    background-color: #4b4204 !important; /* Πιο σκούρο κίτρινο φόντο */
+                    color: #FFEB3B !important; /* Ανοιχτό κίτρινο κείμενο */
+                }
+                /* Διορθώνουμε το χρώμα του κειμένου μέσα στο link στην αναζήτηση */
+                a {
+                    color: #BBDEFB !important; /* Πολύ ανοιχτό μπλε */
+                }
+            }
+            /* -------------------------------------------------------------------------- */
+
         </style>
     """, unsafe_allow_html=True)
 
