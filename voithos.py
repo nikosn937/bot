@@ -179,6 +179,12 @@ def submit_entry(new_entry_list):
         # Προσθήκη της νέας σειράς
         ws.append_row(new_entry_list)
 
+        # ⚠️ ΔΙΟΡΘΩΣΗ 2: Κλείνουμε τη φόρμα και επαναφέρουμε τον τύπο καταχώρησης
+        st.session_state['entry_expander_state'] = False 
+        st.session_state['entry_type'] = 'Text'
+        if 'new_url_value' in st.session_state:
+             st.session_state['new_url_value'] = "" # Μηδενίζουμε και το URL
+
         # Καθαρισμός cache και επανεκτέλεση
         st.cache_data.clear()
         st.success("🎉 Η καταχώρηση έγινε επιτυχώς! Η εφαρμογή ανανεώνεται...")
@@ -189,7 +195,6 @@ def submit_entry(new_entry_list):
         st.error(f"Σφάλμα κατά την καταχώρηση. Ελέγξτε τα δικαιώματα. Λεπτομέρειες: {e}")
 
 
-# ⚠️ ΝΕΑ ΣΥΝΑΡΤΗΣΗ ΓΙΑ UPDATE (ΔΙΟΡΘΩΣΗ) - ΠΡΟΣΘΗΚΗ ΓΙΑ ΜΕΛΛΟΝΤΙΚΗ ΧΡΗΣΗ
 def update_entry(row_index: int, updated_list: list):
     """Ενημερώνει μια υπάρχουσα σειρά στο Google Sheet (ClassBot) με βάση το Internal_ID."""
     if gc is None:
@@ -221,18 +226,19 @@ def update_entry(row_index: int, updated_list: list):
 def data_entry_form(available_schools, logged_in_school, logged_in_userid):
     """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων. (Το σχολείο είναι προ-επιλεγμένο)"""
     
-    # ⚠️ ΔΙΟΡΘΩΣΗ 2: Κρατάμε την κατάσταση του expander
+    # ⚠️ ΔΙΟΡΘΩΣΗ 1: Κρατάμε την κατάσταση του expander, αρχικοποιείται σε False
     if 'entry_expander_state' not in st.session_state:
         st.session_state['entry_expander_state'] = False
         
     tmimata_list = load_tmima_data(logged_in_school)
 
-    # Χρησιμοποιούμε την αποθηκευμένη κατάσταση
+    # Το expander χρησιμοποιεί την αποθηκευμένη κατάσταση
+    # ⚠️ ΔΙΟΡΘΩΣΗ 1: Το expanded=... διασφαλίζει ότι θα ανοίξει μόνο αν ο χρήστης το άνοιξε (ή αν η κατάσταση είναι True)
     with st.expander(f"➕ Νέα Καταχώρηση για το {logged_in_school}", expanded=st.session_state.entry_expander_state):
         
-        # ⚠️ ΔΙΟΡΘΩΣΗ 2: Ενημερώνουμε την κατάσταση του expander μόλις ανοίξει
-        if not st.session_state.entry_expander_state:
-            st.session_state.entry_expander_state = True
+        # Λειτουργία που καλείται στο on_change για να διατηρεί το expander ανοιχτό
+        def keep_expander_open():
+             st.session_state['entry_expander_state'] = True
         
         st.markdown("### Εισαγωγή Νέας Πληροφορίας")
         
@@ -240,17 +246,13 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
         st.code(f"Σχολείο Καταχώρησης: {logged_in_school}", language='text')
         new_school = logged_in_school
         
-        # Λειτουργία που καλείται στο on_change για να διατηρεί το expander ανοιχτό
-        def keep_expander_open():
-             st.session_state['entry_expander_state'] = True
-        
         if tmimata_list:
              # Επιλογή από λίστα (από το sheet 'Σχολεία')
             new_tmima = st.selectbox(
                 "Τμήμα (Tmima):", 
                 options=["-- Επιλέξτε Τμήμα --"] + tmimata_list,
                 key="form_tmima_select",
-                on_change=keep_expander_open # ⚠️ ΔΙΟΡΘΩΣΗ 2: Callback
+                on_change=keep_expander_open # ⚠️ ΔΙΟΡΘΩΣΗ 1: Callback
             )
             new_tmima_input = new_tmima if new_tmima != "-- Επιλέξτε Τμήμα --" else ""
         else:
@@ -259,7 +261,7 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
                 "Τμήμα (Tmima):", 
                 placeholder="Πρέπει να είναι Ελληνικοί Κεφαλαίοι (Π.χ. Α1, Γ2)",
                 key="form_tmima_text",
-                on_change=keep_expander_open # ⚠️ ΔΙΟΡΘΩΣΗ 2: Callback
+                on_change=keep_expander_open # ⚠️ ΔΙΟΡΘΩΣΗ 1: Callback
             )
         
         # 2. Το Radio Button ΕΞΩ από το Form (Για άμεσο rerun/UX fix)
@@ -350,7 +352,7 @@ def teacher_login(df_users):
             st.session_state.authenticated = False
             st.session_state.logged_in_school = None
             st.session_state.logged_in_userid = None
-            # ⚠️ ΔΙΟΡΘΩΣΗ 2: Κλείνουμε το expander κατά την αποσύνδεση
+            # Κλείνουμε το expander κατά την αποσύνδεση
             st.session_state['entry_expander_state'] = False 
             st.cache_data.clear()
             st.rerun()
@@ -390,7 +392,6 @@ def manage_user_posts(df, logged_in_userid):
     """Εμφανίζει και επιτρέπει τη διαχείριση (διόρθωση/διαγραφή) των καταχωρήσεων του χρήστη."""
     
     # Χρησιμοποιούμε τη στήλη 'UserId' για το φιλτράρισμα, όπως καταχωρήθηκε στη φόρμα
-    # (Χρησιμοποιώ την αρχική σας λογική με df.get, η οποία διορθώθηκε με την εισαγωγή της στήλης)
     user_posts = df[df.get('UserId', '').astype(str).str.strip() == logged_in_userid]
     
     if user_posts.empty:
@@ -490,7 +491,7 @@ st.markdown("---")
 logged_in_school_val = st.session_state.get('logged_in_school')
 default_index = 0
 if logged_in_school_val and logged_in_school_val in available_schools:
-    # ⚠️ ΔΙΟΡΘΩΣΗ 1: Εύρεση της index για την αυτόματη επιλογή
+    # Εύρεση της index για την αυτόματη επιλογή
     try:
         default_index = available_schools.index(logged_in_school_val) + 1
     except ValueError:
@@ -499,7 +500,7 @@ if logged_in_school_val and logged_in_school_val in available_schools:
 selected_school = st.selectbox(
     "Επιλέξτε Σχολείο:",
     options=["-- Επιλέξτε --"] + available_schools,
-    index=default_index, # ⚠️ ΔΙΟΡΘΩΣΗ 1: Χρησιμοποιούμε την default_index
+    index=default_index, # Χρησιμοποιούμε την default_index
     key="school_selector"
 )
 
