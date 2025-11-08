@@ -4,7 +4,7 @@ import gspread
 from datetime import datetime, timedelta
 import re
 from typing import List
-from urllib.parse import quote_plus # Προστέθηκε για τη διόρθωση των links στο HTML
+from urllib.parse import quote_plus
 
 # --------------------------------------------------------------------------------
 # 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS) & CSS
@@ -389,13 +389,64 @@ def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
     current_info = entry_data['Info']
     current_url = entry_data['URL']
     current_type = entry_data['Type']
-    current_date = entry_data['Date'].date() # Εξάγουμε μόνο την ημερομηνία
+    current_date = entry_data['Date'].date()
     current_tmima = entry_data['Tmima']
     current_userid = entry_data['UserId']
-    internal_id = entry_data['Internal_ID'] # Αυτό το χρειαζόμαστε για το update!
+    internal_id = entry_data['Internal_ID'] 
 
-    # Λίστα τμημάτων για το σχολείο του χρήστη
     tmimata_list = load_tmima_data(logged_in_school)
+    
+    # --------------------------------------------------------------------------
+    # 1. ΤΥΠΟΣ ΚΑΤΑΧΩΡΗΣΗΣ (ΕΚΤΟΣ ΦΟΡΜΑΣ ΓΙΑ ΔΥΝΑΜΙΚΟ RERUN)
+    # --------------------------------------------------------------------------
+
+    # Εξασφάλιση ότι η session state έχει αρχική τιμή
+    if f'edit_entry_type_{internal_id}' not in st.session_state:
+        st.session_state[f'edit_entry_type_{internal_id}'] = current_type
+
+    # Radio Button για την επιλογή Τύπου (Text/Link)
+    st.session_state[f'edit_entry_type_{internal_id}'] = st.radio(
+        "Τύπος Καταχώρησης", 
+        ('Text', 'Link'), 
+        index=0 if current_type == 'Text' else 1,
+        horizontal=True,
+        key=f"edit_radio_type_{internal_id}"
+    )
+
+    # --------------------------------------------------------------------------
+    # 2. ΥΠΟΛΟΙΠΑ ΠΕΔΙΑ ΠΟΥ ΕΞΑΡΤΩΝΤΑΙ ΑΠΟ ΤΟΝ ΤΥΠΟ (ΕΚΤΟΣ ΦΟΡΜΑΣ)
+    # --------------------------------------------------------------------------
+    
+    edited_url = ""
+    edited_info = ""
+    
+    if st.session_state[f'edit_entry_type_{internal_id}'] == 'Link':
+        # Εμφάνιση URL
+        st.session_state[f'edit_url_value_{internal_id}'] = st.text_input(
+            "Σύνδεσμος (URL)", 
+            value=current_url if current_type == 'Link' else "",
+            key=f"edit_url_input_{internal_id}",
+            placeholder="Προσθέστε έναν URL, σύνδεσμο Google Drive, κλπ."
+        )
+        edited_url = st.session_state[f'edit_url_value_{internal_id}']
+        
+        # Περιγραφή Συνδέσμου (Info)
+        edited_info = st.text_input(
+            "Περιγραφή Συνδέσμου (Info):", 
+            value=current_info, 
+            key=f"edit_info_link_{internal_id}"
+        )
+    else:
+        # Περιγραφή (Info)
+        edited_info = st.text_area(
+            "Περιγραφή (Info):", 
+            value=current_info, 
+            key=f"edit_info_text_{internal_id}"
+        )
+    
+    # --------------------------------------------------------------------------
+    # 3. ΦΟΡΜΑ ΥΠΟΒΟΛΗΣ (ΕΝΤΟΣ ΦΟΡΜΑΣ)
+    # --------------------------------------------------------------------------
 
     with st.form(f"edit_form_{internal_id}"):
         
@@ -406,7 +457,6 @@ def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
         if tmimata_list:
             default_tmima_index = 0
             if current_tmima in tmimata_list:
-                # Βρίσκουμε την index στην λίστα των options (Options=["-- Επιλέξτε Τμήμα --"] + tmimata_list)
                 default_tmima_index = tmimata_list.index(current_tmima) + 1 
             edited_tmima = st.selectbox(
                 "Τμήμα (Tmima):", 
@@ -430,44 +480,6 @@ def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
             key=f"edit_keyword_{internal_id}"
         )
 
-        # Τύπος Καταχώρησης (Radio Button)
-        if f'edit_entry_type_{internal_id}' not in st.session_state:
-            st.session_state[f'edit_entry_type_{internal_id}'] = current_type
-
-        st.session_state[f'edit_entry_type_{internal_id}'] = st.radio(
-            "Τύπος Καταχώρησης", 
-            ('Text', 'Link'), 
-            index=0 if current_type == 'Text' else 1,
-            horizontal=True,
-            key=f"edit_radio_type_{internal_id}"
-        )
-        
-        # URL (εμφανίζεται μόνο αν Type είναι Link)
-        edited_url = ""
-        if st.session_state[f'edit_entry_type_{internal_id}'] == 'Link':
-            # Ενημερώνουμε την αρχική τιμή του URL
-            st.session_state[f'edit_url_value_{internal_id}'] = st.text_input(
-                "Σύνδεσμος (URL)", 
-                value=current_url, 
-                key=f"edit_url_input_{internal_id}",
-                placeholder="Προσθέστε έναν URL, σύνδεσμο Google Drive, κλπ."
-            )
-            edited_url = st.session_state[f'edit_url_value_{internal_id}']
-        
-        # Περιγραφή (ανάλογα με τον τύπο)
-        if st.session_state[f'edit_entry_type_{internal_id}'] == 'Text':
-            edited_info = st.text_area(
-                "Περιγραφή (Info):", 
-                value=current_info, 
-                key=f"edit_info_text_{internal_id}"
-            )
-        else:
-            edited_info = st.text_input(
-                "Περιγραφή Συνδέσμου (Info):", 
-                value=current_info, 
-                key=f"edit_info_link_{internal_id}"
-            )
-        
         # Ημερομηνία
         edited_date_obj = st.date_input(
             "Ημερομηνία Καταχώρησης (Date):", 
@@ -775,10 +787,8 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                         css_class += ' info-card-link'
                         link_description = row['Info'].strip()
                         link_url = row['URL'].strip()
-                        # ΔΙΟΡΘΩΣΗ: Χρησιμοποιούμε quote_plus(..., safe=':/') και αφαιρούμε τις γωνιακές αγκύλες στο HTML
+                        # ΔΙΟΡΘΩΣΗ: Καθαρό HTML <a> tag με quote_plus
                         safe_url = quote_plus(link_url, safe=':/') 
-                        content = f"🔗 **Σύνδεσμος:** [<span style='color: #1A5276;'>{link_description}</span>](href='{safe_url}' target='_blank')>"
-                        # Σωστή σύνταξη HTML: <a href='...' target='_blank'>Link Text</a>
                         content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #1A5276; text-decoration: none;'>{link_description}</a>"
                     elif item_type == 'text':
                         css_class += ' info-card-text'
@@ -851,9 +861,8 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                             link_description = info.strip()
                             link_url = url.strip()
                             if link_url:
-                                # ΔΙΟΡΘΩΣΗ: Χρησιμοποιούμε quote_plus(..., safe=':/') και αφαιρούμε τις γωνιακές αγκύλες στο HTML
+                                # ΔΙΟΡΘΩΣΗ: Καθαρό HTML <a> tag με quote_plus
                                 safe_url = quote_plus(link_url, safe=':/')
-                                # Σωστή σύνταξη HTML: <a href='...' target='_blank'>Link Text</a>
                                 content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #1A5276; text-decoration: none;'>{link_description}</a>"
                             else:
                                 content = f"⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}"
