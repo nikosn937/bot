@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from datetime import datetime, timedelta
-import re 
+import re
 from typing import List
 
 # --------------------------------------------------------------------------------
@@ -23,7 +23,7 @@ def get_gspread_client():
         return None
 
 gc = get_gspread_client()
-SHEET_NAME = st.secrets["sheet_name"] 
+SHEET_NAME = st.secrets["sheet_name"]
 DATE_FORMAT = '%d/%m/%Y'
 
 # --------------------------------------------------------------------------------
@@ -56,7 +56,7 @@ def load_data():
         data = ws.get_all_values()
         
         headers = data[0] if data else []
-        df = pd.DataFrame(data[1:], columns=headers) 
+        df = pd.DataFrame(data[1:], columns=headers)
         df.columns = df.columns.str.strip()
         
         # ΠΡΟΣΟΧΗ: Ελέγχουμε τις βασικές στήλες
@@ -66,14 +66,14 @@ def load_data():
             return pd.DataFrame(), []
         
         # Καθαρισμός/Επεξεργασία δεδομένων
-        df = df.dropna(subset=['Keyword', 'Date', 'School', 'Tmima'], how='any') 
+        df = df.dropna(subset=['Keyword', 'Date', 'School', 'Tmima'], how='any')
         df['Date'] = pd.to_datetime(df['Date'], format=DATE_FORMAT, errors='coerce')
         df = df.dropna(subset=['Date'])
         
         available_schools = sorted(df['School'].unique().tolist()) if 'School' in df.columns else []
         
         # Προσθήκη μοναδικού ID για διαγραφή/διόρθωση (Αντιστοιχεί στην index της σειράς στο sheet)
-        df['Internal_ID'] = df.index + 1 
+        df['Internal_ID'] = df.index + 1
         
         return df, available_schools
         
@@ -97,7 +97,7 @@ def load_users_data():
         df_users.columns = df_users.columns.str.strip()
 
         # Η νέα δομή με UserId
-        required_cols = ['UserId', 'School', 'UserName', 'Password'] 
+        required_cols = ['UserId', 'School', 'UserName', 'Password']
         if not all(col in df_users.columns for col in required_cols):
             st.error(f"Σφάλμα δομής Sheet 'Χρήστες': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}.")
             return pd.DataFrame()
@@ -136,7 +136,7 @@ def load_tmima_data(school_name: str) -> List[str]:
         
     except gspread.exceptions.WorksheetNotFound:
         st.warning("⚠️ Προσοχή: Δεν βρέθηκε το worksheet 'Σχολεία'. Η καταχώρηση Τμήματος θα γίνει χειροκίνητα.")
-        return [] 
+        return []
     except Exception as e:
         st.error(f"Σφάλμα φόρτωσης δεδομένων Τμημάτων από το sheet 'Σχολεία'. Λεπτομέρειες: {e}")
         return []
@@ -180,20 +180,59 @@ def submit_entry(new_entry_list):
         ws.append_row(new_entry_list)
 
         # Καθαρισμός cache και επανεκτέλεση
-        st.cache_data.clear() 
+        st.cache_data.clear()
         st.success("🎉 Η καταχώρηση έγινε επιτυχώς! Η εφαρμογή ανανεώνεται...")
         st.balloons()
-        st.rerun() 
+        st.rerun()
         
     except Exception as e:
         st.error(f"Σφάλμα κατά την καταχώρηση. Ελέγξτε τα δικαιώματα. Λεπτομέρειες: {e}")
 
+
+# ⚠️ ΝΕΑ ΣΥΝΑΡΤΗΣΗ ΓΙΑ UPDATE (ΔΙΟΡΘΩΣΗ) - ΠΡΟΣΘΗΚΗ ΓΙΑ ΜΕΛΛΟΝΤΙΚΗ ΧΡΗΣΗ
+def update_entry(row_index: int, updated_list: list):
+    """Ενημερώνει μια υπάρχουσα σειρά στο Google Sheet (ClassBot) με βάση το Internal_ID."""
+    if gc is None:
+        st.error("Η σύνδεση με το Google Sheets απέτυχε.")
+        return False
+
+    try:
+        sh = gc.open(SHEET_NAME)
+        ws = sh.get_worksheet(0) # Sheet ClassBot
+
+        # Η gspread row index (1-based) είναι το Internal_ID + 1 (Internal_ID = Pandas index + 1)
+        gspread_row_index = row_index + 1
+        
+        # Ενημέρωση της σειράς με τα νέα δεδομένα (χρησιμοποιείται η ws.update(cell, value))
+        # Το gspread.update(range_name, values) παίρνει μια λίστα λιστών (για μία σειρά)
+        ws.update(f'A{gspread_row_index}', [updated_list]) 
+
+        # Καθαρισμός cache και επανεκτέλεση
+        st.cache_data.clear() 
+        st.success("✅ Η διόρθωση έγινε επιτυχώς! Η εφαρμογή ανανεώθηκε.")
+        st.rerun() 
+        return True
+        
+    except Exception as e:
+        st.error(f"Σφάλμα κατά την διόρθωση στο Sheet. Λεπτομέρειες: {e}")
+        return False
+# -----------------------------------------------------------------------------
+
 def data_entry_form(available_schools, logged_in_school, logged_in_userid):
     """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων. (Το σχολείο είναι προ-επιλεγμένο)"""
     
+    # ⚠️ ΔΙΟΡΘΩΣΗ 2: Κρατάμε την κατάσταση του expander
+    if 'entry_expander_state' not in st.session_state:
+        st.session_state['entry_expander_state'] = False
+        
     tmimata_list = load_tmima_data(logged_in_school)
 
-    with st.expander(f"➕ Νέα Καταχώρηση για το {logged_in_school}"):
+    # Χρησιμοποιούμε την αποθηκευμένη κατάσταση
+    with st.expander(f"➕ Νέα Καταχώρηση για το {logged_in_school}", expanded=st.session_state.entry_expander_state):
+        
+        # ⚠️ ΔΙΟΡΘΩΣΗ 2: Ενημερώνουμε την κατάσταση του expander μόλις ανοίξει
+        if not st.session_state.entry_expander_state:
+            st.session_state.entry_expander_state = True
         
         st.markdown("### Εισαγωγή Νέας Πληροφορίας")
         
@@ -201,12 +240,17 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
         st.code(f"Σχολείο Καταχώρησης: {logged_in_school}", language='text')
         new_school = logged_in_school
         
+        # Λειτουργία που καλείται στο on_change για να διατηρεί το expander ανοιχτό
+        def keep_expander_open():
+             st.session_state['entry_expander_state'] = True
+        
         if tmimata_list:
              # Επιλογή από λίστα (από το sheet 'Σχολεία')
             new_tmima = st.selectbox(
                 "Τμήμα (Tmima):", 
                 options=["-- Επιλέξτε Τμήμα --"] + tmimata_list,
-                key="form_tmima_select"
+                key="form_tmima_select",
+                on_change=keep_expander_open # ⚠️ ΔΙΟΡΘΩΣΗ 2: Callback
             )
             new_tmima_input = new_tmima if new_tmima != "-- Επιλέξτε Τμήμα --" else ""
         else:
@@ -214,7 +258,8 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
             new_tmima_input = st.text_input(
                 "Τμήμα (Tmima):", 
                 placeholder="Πρέπει να είναι Ελληνικοί Κεφαλαίοι (Π.χ. Α1, Γ2)",
-                key="form_tmima_text"
+                key="form_tmima_text",
+                on_change=keep_expander_open # ⚠️ ΔΙΟΡΘΩΣΗ 2: Callback
             )
         
         # 2. Το Radio Button ΕΞΩ από το Form (Για άμεσο rerun/UX fix)
@@ -273,6 +318,7 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
                 # Έλεγχος πληρότητας
                 if not new_keyword or not new_info or not new_school or (st.session_state.entry_type == 'Link' and not final_url):
                     st.error("Παρακαλώ συμπληρώστε όλα τα πεδία (Φράση-Κλειδί, Περιγραφή, Σχολείο, Τμήμα και Σύνδεσμο αν είναι Link).")
+                    st.stop()
                 else:
                     # Υποθέτουμε τη σειρά στο ClassBot Sheet: Keyword, Info, URL, Type, Date, School, Tmima, UserId
                     new_entry_list = [
@@ -304,7 +350,9 @@ def teacher_login(df_users):
             st.session_state.authenticated = False
             st.session_state.logged_in_school = None
             st.session_state.logged_in_userid = None
-            st.cache_data.clear() 
+            # ⚠️ ΔΙΟΡΘΩΣΗ 2: Κλείνουμε το expander κατά την αποσύνδεση
+            st.session_state['entry_expander_state'] = False 
+            st.cache_data.clear()
             st.rerun()
         return True
 
@@ -342,6 +390,7 @@ def manage_user_posts(df, logged_in_userid):
     """Εμφανίζει και επιτρέπει τη διαχείριση (διόρθωση/διαγραφή) των καταχωρήσεων του χρήστη."""
     
     # Χρησιμοποιούμε τη στήλη 'UserId' για το φιλτράρισμα, όπως καταχωρήθηκε στη φόρμα
+    # (Χρησιμοποιώ την αρχική σας λογική με df.get, η οποία διορθώθηκε με την εισαγωγή της στήλης)
     user_posts = df[df.get('UserId', '').astype(str).str.strip() == logged_in_userid]
     
     if user_posts.empty:
@@ -387,9 +436,9 @@ def manage_user_posts(df, logged_in_userid):
                 st.error("Η καταχώρηση δεν βρέθηκε στο DataFrame.")
                 st.stop()
 
-            # Βρίσκουμε την αρχική 0-based index της γραμμής στο πλήρες DF 
-            # Η gspread row index (1-based) είναι η Pandas index + 2
-            gspread_row_index = int(row_to_delete.index[0]) + 2
+            # Βρίσκουμε την gspread row index (1-based)
+            # Η gspread row index (1-based) είναι το Internal_ID + 1 (Internal_ID = Pandas index + 1)
+            gspread_row_index = int(post_id) + 1 # Χρησιμοποιούμε το Internal_ID + 1
 
             try:
                 sh = gc.open(SHEET_NAME)
@@ -397,7 +446,7 @@ def manage_user_posts(df, logged_in_userid):
                 
                 ws.delete_rows(gspread_row_index)
                 
-                st.cache_data.clear() 
+                st.cache_data.clear()
                 st.success(f"🗑️ Η καταχώρηση (ID: {post_id}) διαγράφηκε επιτυχώς.")
                 st.rerun()
 
@@ -438,9 +487,19 @@ st.markdown("---")
 
 
 # 1. ΕΠΙΛΟΓΗ ΣΧΟΛΕΙΟΥ
+logged_in_school_val = st.session_state.get('logged_in_school')
+default_index = 0
+if logged_in_school_val and logged_in_school_val in available_schools:
+    # ⚠️ ΔΙΟΡΘΩΣΗ 1: Εύρεση της index για την αυτόματη επιλογή
+    try:
+        default_index = available_schools.index(logged_in_school_val) + 1
+    except ValueError:
+        default_index = 0
+
 selected_school = st.selectbox(
     "Επιλέξτε Σχολείο:",
     options=["-- Επιλέξτε --"] + available_schools,
+    index=default_index, # ⚠️ ΔΙΟΡΘΩΣΗ 1: Χρησιμοποιούμε την default_index
     key="school_selector"
 )
 
