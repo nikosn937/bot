@@ -60,9 +60,9 @@ def load_data():
         df.columns = df.columns.str.strip()
         
         # ΠΡΟΣΟΧΗ: Ελέγχουμε τις βασικές στήλες
-        required_cols = ['Keyword', 'Info', 'URL', 'Type', 'Date', 'School', 'Tmima']
+        required_cols = ['Keyword', 'Info', 'URL', 'Type', 'Date', 'School', 'Tmima', 'UserId']
         if not all(col in df.columns for col in required_cols):
-            st.error(f"Σφάλμα δομής Sheet 'ClassBot': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)} και η στήλη 'UserId'.")
+            st.error(f"Σφάλμα δομής Sheet 'ClassBot': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}.")
             return pd.DataFrame(), []
         
         # Καθαρισμός/Επεξεργασία δεδομένων
@@ -73,7 +73,8 @@ def load_data():
         available_schools = sorted(df['School'].unique().tolist()) if 'School' in df.columns else []
         
         # Προσθήκη μοναδικού ID για διαγραφή/διόρθωση (Αντιστοιχεί στην index της σειράς στο sheet)
-        df['Internal_ID'] = df.index + 1
+        # Επειδή οι επικεφαλίδες είναι η σειρά 1, η index της Pandas (ξεκινά από 0) αντιστοιχεί στην gspread row index - 1
+        df['Internal_ID'] = df.index + 1 
         
         return df, available_schools
         
@@ -96,7 +97,6 @@ def load_users_data():
         df_users = pd.DataFrame(data[1:], columns=headers)
         df_users.columns = df_users.columns.str.strip()
 
-        # Η νέα δομή με UserId
         required_cols = ['UserId', 'School', 'UserName', 'Password']
         if not all(col in df_users.columns for col in required_cols):
             st.error(f"Σφάλμα δομής Sheet 'Χρήστες': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}.")
@@ -127,7 +127,7 @@ def load_tmima_data(school_name: str) -> List[str]:
         
         required_cols = ['School', 'Tmima']
         if not all(col in df_tmima.columns for col in required_cols):
-            st.warning(f"Σφάλμα δομής Sheet 'Σχολεία': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}. Συνεχίζουμε με χειροκίνητη εισαγωγή Τμήματος.")
+            st.warning(f"⚠️ Προσοχή: Σφάλμα δομής Sheet 'Σχολεία'. Συνεχίζουμε με χειροκίνητη εισαγωγή Τμήματος.")
             return []
 
         # Φιλτράρισμα βάσει Σχολείου και επιστροφή μοναδικών Τμημάτων
@@ -163,7 +163,7 @@ def create_search_maps(df):
 
 
 # --------------------------------------------------------------------------------
-# 2. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ / AUTHENTICATION
+# 2. ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ / AUTHENTICATION / UPDATE
 # --------------------------------------------------------------------------------
 
 def submit_entry(new_entry_list):
@@ -179,7 +179,7 @@ def submit_entry(new_entry_list):
         # Προσθήκη της νέας σειράς
         ws.append_row(new_entry_list)
 
-        # ⚠️ ΔΙΟΡΘΩΣΗ 2: Κλείνουμε τη φόρμα και επαναφέρουμε τον τύπο καταχώρησης
+        # Κλείνουμε τη φόρμα και επαναφέρουμε τον τύπο καταχώρησης
         st.session_state['entry_expander_state'] = False 
         st.session_state['entry_type'] = 'Text'
         if 'new_url_value' in st.session_state:
@@ -210,7 +210,8 @@ def update_entry(row_index: int, updated_list: list):
         
         # Ενημέρωση της σειράς με τα νέα δεδομένα (χρησιμοποιείται η ws.update(cell, value))
         # Το gspread.update(range_name, values) παίρνει μια λίστα λιστών (για μία σειρά)
-        ws.update(f'A{gspread_row_index}', [updated_list]) 
+        ws.update(f'A{gspread_row_index}', [updated_list], value_input_option='USER_ENTERED') 
+        # Χρησιμοποιούμε value_input_option='USER_ENTERED' για να διατηρήσουμε τις μορφοποιήσεις
 
         # Καθαρισμός cache και επανεκτέλεση
         st.cache_data.clear() 
@@ -226,14 +227,12 @@ def update_entry(row_index: int, updated_list: list):
 def data_entry_form(available_schools, logged_in_school, logged_in_userid):
     """Δημιουργεί τη φόρμα εισαγωγής νέων δεδομένων. (Το σχολείο είναι προ-επιλεγμένο)"""
     
-    # ⚠️ ΔΙΟΡΘΩΣΗ 1: Κρατάμε την κατάσταση του expander, αρχικοποιείται σε False
     if 'entry_expander_state' not in st.session_state:
         st.session_state['entry_expander_state'] = False
         
     tmimata_list = load_tmima_data(logged_in_school)
 
     # Το expander χρησιμοποιεί την αποθηκευμένη κατάσταση
-    # ⚠️ ΔΙΟΡΘΩΣΗ 1: Το expanded=... διασφαλίζει ότι θα ανοίξει μόνο αν ο χρήστης το άνοιξε (ή αν η κατάσταση είναι True)
     with st.expander(f"➕ Νέα Καταχώρηση για το {logged_in_school}", expanded=st.session_state.entry_expander_state):
         
         # Λειτουργία που καλείται στο on_change για να διατηρεί το expander ανοιχτό
@@ -252,7 +251,7 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
                 "Τμήμα (Tmima):", 
                 options=["-- Επιλέξτε Τμήμα --"] + tmimata_list,
                 key="form_tmima_select",
-                on_change=keep_expander_open # ⚠️ ΔΙΟΡΘΩΣΗ 1: Callback
+                on_change=keep_expander_open # Callback
             )
             new_tmima_input = new_tmima if new_tmima != "-- Επιλέξτε Τμήμα --" else ""
         else:
@@ -261,7 +260,7 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
                 "Τμήμα (Tmima):", 
                 placeholder="Πρέπει να είναι Ελληνικοί Κεφαλαίοι (Π.χ. Α1, Γ2)",
                 key="form_tmima_text",
-                on_change=keep_expander_open # ⚠️ ΔΙΟΡΘΩΣΗ 1: Callback
+                on_change=keep_expander_open # Callback
             )
         
         # 2. Το Radio Button ΕΞΩ από το Form (Για άμεσο rerun/UX fix)
@@ -322,18 +321,151 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
                     st.error("Παρακαλώ συμπληρώστε όλα τα πεδία (Φράση-Κλειδί, Περιγραφή, Σχολείο, Τμήμα και Σύνδεσμο αν είναι Link).")
                     st.stop()
                 else:
-                    # Υποθέτουμε τη σειρά στο ClassBot Sheet: Keyword, Info, URL, Type, Date, School, Tmima, UserId
+                    # Σειρά στο ClassBot Sheet: Keyword, Info, URL, Type, Date, School, Tmima, UserId
                     new_entry_list = [
                         new_keyword.strip(), 
                         new_info.strip(), 
                         final_url, 
                         st.session_state.entry_type, 
                         new_date_str,
-                        new_school,  
-                        final_tmima,  
-                        logged_in_userid # **UserId:** Καταχώρηση του μοναδικού ID χρήστη
+                        new_school, 
+                        final_tmima, 
+                        logged_in_userid # UserId: Καταχώρηση του μοναδικού ID χρήστη
                     ]
                     submit_entry(new_entry_list)
+
+def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
+    """
+    Δημιουργεί τη φόρμα επεξεργασίας για μια συγκεκριμένη καταχώρηση.
+    """
+    current_keyword = entry_data['Keyword']
+    current_info = entry_data['Info']
+    current_url = entry_data['URL']
+    current_type = entry_data['Type']
+    current_date = entry_data['Date'].date() # Εξάγουμε μόνο την ημερομηνία
+    current_tmima = entry_data['Tmima']
+    current_userid = entry_data['UserId']
+    internal_id = entry_data['Internal_ID'] # Αυτό το χρειαζόμαστε για το update!
+
+    # Λίστα τμημάτων για το σχολείο του χρήστη
+    tmimata_list = load_tmima_data(logged_in_school)
+
+    with st.form(f"edit_form_{internal_id}"):
+        
+        # Σχολείο (Locked)
+        st.code(f"Σχολείο: {logged_in_school}", language='text')
+        
+        # Τμήμα
+        if tmimata_list:
+            default_tmima_index = 0
+            if current_tmima in tmimata_list:
+                # Βρίσκουμε την index στην λίστα των options (Options=["-- Επιλέξτε Τμήμα --"] + tmimata_list)
+                default_tmima_index = tmimata_list.index(current_tmima) + 1 
+            edited_tmima = st.selectbox(
+                "Τμήμα (Tmima):", 
+                options=["-- Επιλέξτε Τμήμα --"] + tmimata_list,
+                index=default_tmima_index,
+                key=f"edit_tmima_select_{internal_id}"
+            )
+            final_edited_tmima = edited_tmima if edited_tmima != "-- Επιλέξτε Τμήμα --" else ""
+        else:
+            final_edited_tmima = st.text_input(
+                "Τμήμα (Tmima):", 
+                value=current_tmima, 
+                placeholder="Πρέπει να είναι Ελληνικοί Κεφαλαίοι (Π.χ. Α1, Γ2)",
+                key=f"edit_tmima_text_{internal_id}"
+            )
+
+        # Φράση-Κλειδί
+        edited_keyword = st.text_input(
+            "Φράση-Κλειδί (Keyword):", 
+            value=current_keyword, 
+            key=f"edit_keyword_{internal_id}"
+        )
+
+        # Τύπος Καταχώρησης (Radio Button)
+        if f'edit_entry_type_{internal_id}' not in st.session_state:
+            st.session_state[f'edit_entry_type_{internal_id}'] = current_type
+
+        st.session_state[f'edit_entry_type_{internal_id}'] = st.radio(
+            "Τύπος Καταχώρησης", 
+            ('Text', 'Link'), 
+            index=0 if current_type == 'Text' else 1,
+            horizontal=True,
+            key=f"edit_radio_type_{internal_id}"
+        )
+        
+        # URL (εμφανίζεται μόνο αν Type είναι Link)
+        edited_url = ""
+        if st.session_state[f'edit_entry_type_{internal_id}'] == 'Link':
+            # Ενημερώνουμε την αρχική τιμή του URL
+            st.session_state[f'edit_url_value_{internal_id}'] = st.text_input(
+                "Σύνδεσμος (URL)", 
+                value=current_url, 
+                key=f"edit_url_input_{internal_id}",
+                placeholder="Προσθέστε έναν URL, σύνδεσμο Google Drive, κλπ."
+            )
+            edited_url = st.session_state[f'edit_url_value_{internal_id}']
+        
+        # Περιγραφή (ανάλογα με τον τύπο)
+        if st.session_state[f'edit_entry_type_{internal_id}'] == 'Text':
+            edited_info = st.text_area(
+                "Περιγραφή (Info):", 
+                value=current_info, 
+                key=f"edit_info_text_{internal_id}"
+            )
+        else:
+            edited_info = st.text_input(
+                "Περιγραφή Συνδέσμου (Info):", 
+                value=current_info, 
+                key=f"edit_info_link_{internal_id}"
+            )
+        
+        # Ημερομηνία
+        edited_date_obj = st.date_input(
+            "Ημερομηνία Καταχώρησης (Date):", 
+            value=current_date, 
+            key=f"edit_date_{internal_id}"
+        )
+        edited_date_str = edited_date_obj.strftime(DATE_FORMAT)
+
+        submitted_edit = st.form_submit_button("Αποθήκευση Αλλαγών ✅")
+
+        if submitted_edit:
+            final_edited_url = edited_url.strip() if st.session_state[f'edit_entry_type_{internal_id}'] == 'Link' else ""
+            final_edited_tmima_cleaned = final_edited_tmima.strip().upper().replace(" ", "")
+
+            # Αυτόματη Προσθήκη https:// αν είναι Link και δεν έχει πρωτόκολλο
+            if final_edited_url and st.session_state[f'edit_entry_type_{internal_id}'] == 'Link':
+                if not final_edited_url.lower().startswith(('http://', 'https://', 'ftp://')):
+                    final_edited_url = 'https://' + final_edited_url
+
+            # Έλεγχος εγκυρότητας Τμήματος
+            tmima_pattern = re.compile(r'^[Α-Ω0-9]+$')
+            if not tmima_pattern.match(final_edited_tmima_cleaned) or final_edited_tmima_cleaned == "":
+                st.error("⚠️ Σφάλμα Τμήματος: Το πεδίο 'Τμήμα' είναι κενό ή περιέχει μη επιτρεπτούς χαρακτήρες. Χρησιμοποιήστε μόνο Ελληνικούς κεφαλαίους (Α-Ω) και αριθμούς (0-9).")
+                st.stop()
+
+            # Έλεγχος πληρότητας
+            if not edited_keyword or not edited_info or (st.session_state[f'edit_entry_type_{internal_id}'] == 'Link' and not final_edited_url):
+                st.error("Παρακαλώ συμπληρώστε όλα τα πεδία (Φράση-Κλειδί, Περιγραφή και Σύνδεσμο αν είναι Link).")
+                st.stop()
+            else:
+                # Sheet: Keyword, Info, URL, Type, Date, School, Tmima, UserId
+                updated_entry_list = [
+                    edited_keyword.strip(), 
+                    edited_info.strip(), 
+                    final_edited_url, 
+                    st.session_state[f'edit_entry_type_{internal_id}'], 
+                    edited_date_str,
+                    logged_in_school, # Το σχολείο δεν αλλάζει
+                    final_edited_tmima_cleaned,  
+                    current_userid # Ο UserId δεν αλλάζει
+                ]
+                
+                # Καλείται η συνάρτηση update_entry
+                update_entry(internal_id, updated_entry_list)
+
 
 def teacher_login(df_users):
     """Δημιουργεί τη φόρμα σύνδεσης και χειρίζεται την πιστοποίηση."""
@@ -341,7 +473,7 @@ def teacher_login(df_users):
     if 'authenticated' not in st.session_state:
         st.session_state['authenticated'] = False
         st.session_state['logged_in_school'] = None
-        st.session_state['logged_in_userid'] = None # **ΝΕΟ**
+        st.session_state['logged_in_userid'] = None 
         st.session_state['login_attempted'] = False
 
     st.sidebar.markdown("### Σύνδεση Εκπαιδευτικού 🔑")
@@ -374,7 +506,7 @@ def teacher_login(df_users):
             if not user_found.empty:
                 st.session_state.authenticated = True
                 st.session_state.logged_in_school = user_found['School'].iloc[0].strip()
-                st.session_state.logged_in_userid = user_found['UserId'].iloc[0].strip() # **Διαβάζουμε το UserId**
+                st.session_state.logged_in_userid = user_found['UserId'].iloc[0].strip() 
                 st.success("Επιτυχής σύνδεση!")
                 st.rerun() 
             else:
@@ -391,68 +523,78 @@ def teacher_login(df_users):
 def manage_user_posts(df, logged_in_userid):
     """Εμφανίζει και επιτρέπει τη διαχείριση (διόρθωση/διαγραφή) των καταχωρήσεων του χρήστη."""
     
-    # Χρησιμοποιούμε τη στήλη 'UserId' για το φιλτράρισμα, όπως καταχωρήθηκε στη φόρμα
-    user_posts = df[df.get('UserId', '').astype(str).str.strip() == logged_in_userid]
+    # Χρησιμοποιούμε τη στήλη 'UserId' για το φιλτράρισμα
+    user_posts = df[df.get('UserId', '').astype(str).str.strip() == logged_in_userid].copy()
+    logged_in_school = st.session_state.get('logged_in_school') # Χρειαζόμαστε το σχολείο για το edit form
     
     if user_posts.empty:
         st.info(f"Δεν βρέθηκαν καταχωρήσεις για τον δικό σας χρήστη (UserId: {logged_in_userid}).")
         return
 
     st.header("✏️ Διαχείριση Καταχώρησης")
-    st.info(f"Εμφανίζονται οι **{len(user_posts)}** καταχωρήσεις σας. Μπορείτε να τις διαγράψετε (μόνο).")
+    st.info(f"Εμφανίζονται οι **{len(user_posts)}** καταχωρήσεις σας. Μπορείτε να τις επεξεργαστείτε ή να τις διαγράψετε.")
     
     user_posts = user_posts.sort_values(by='Date', ascending=False)
     
-    # Δημιουργία λίστας για την επιλογή διαγραφής
-    post_options = []
-    for _, row in user_posts.iterrows():
+    # Δημιουργία λίστας για την επιλογή επεξεργασίας/διαγραφής
+    post_options = ["-- Επιλέξτε Καταχώρηση --"]
+    post_details_map = {} # Για να αποθηκεύσουμε τις λεπτομέρειες κάθε post (Pandas Series)
+    for index, row in user_posts.iterrows():
         date_str = row['Date'].strftime(DATE_FORMAT)
         tmima = row['Tmima']
         keyword = row['Keyword']
-        info = row['Info'][:50] + "..." if len(row['Info']) > 50 else row['Info']
-        post_options.append(f"[{date_str} - {tmima}] {keyword} - {info} (ID: {row['Internal_ID']})")
+        info_preview = row['Info'][:70] + "..." if len(row['Info']) > 70 else row['Info']
+        option_label = f"[{date_str} - {tmima}] {keyword} - {info_preview} (ID: {row['Internal_ID']})"
+        post_options.append(option_label)
+        post_details_map[option_label] = row # Αποθηκεύουμε ολόκληρη τη σειρά (DataFrame row)
 
-    with st.form("delete_form"):
-        st.subheader("Διαγραφή Καταχώρησης")
+    # ----------------------------------------------------------------------
+    # Επιλογή Καταχώρησης για Επεξεργασία/Διαγραφή
+    # ----------------------------------------------------------------------
+    selected_post_str = st.selectbox(
+        "Επιλέξτε την καταχώρηση για επεξεργασία ή διαγραφή:",
+        options=post_options,
+        key="edit_delete_select"
+    )
+
+    if selected_post_str != "-- Επιλέξτε Καταχώρηση --":
+        selected_post_row = post_details_map[selected_post_str]
         
-        selected_post_str = st.selectbox(
-            "Επιλέξτε την καταχώρηση προς διαγραφή:",
-            options=["-- Επιλέξτε Καταχώρηση --"] + post_options,
-            key="delete_select"
-        )
+        # ----------------------------------------------------------------------
+        # Φόρμα Επεξεργασίας (Edit Form)
+        # ----------------------------------------------------------------------
+        with st.expander(f"⚙️ Επεξεργασία Καταχώρησης (ID: {selected_post_row['Internal_ID']})", expanded=True):
+            st.markdown("### Επεξεργασία Υπάρχουσας Πληροφορίας")
+            
+            # Καλεί τη νέα συνάρτηση για τη φόρμα επεξεργασίας
+            edit_entry_form(selected_post_row, logged_in_school)
+
+        st.markdown("---") # Οπτικός διαχωρισμός
         
-        delete_submitted = st.form_submit_button("Διαγραφή Επιλεγμένης Καταχώρησης 🗑️")
-
-        if delete_submitted and selected_post_str != "-- Επιλέξτε Καταχώρηση --":
-            # Εξαγωγή Internal_ID από τη συμβολοσειρά
-            try:
-                post_id = int(selected_post_str.split('(ID: ')[1].strip(')'))
-            except IndexError:
-                st.error("Σφάλμα στην ανάγνωση του Internal ID.")
-                st.stop()
+        # ----------------------------------------------------------------------
+        # Φόρμα Διαγραφής (Delete Form)
+        # ----------------------------------------------------------------------
+        with st.form("delete_form_individual"):
+            st.subheader(f"Διαγραφή Καταχώρησης (ID: {selected_post_row['Internal_ID']})")
+            st.error(f"⚠️ Προσοχή: Είστε σίγουροι ότι θέλετε να διαγράψετε την καταχώρηση: {selected_post_row['Keyword']} - {selected_post_row['Info'][:50]}...;")
             
-            row_to_delete = df[df['Internal_ID'] == post_id]
-            
-            if row_to_delete.empty:
-                st.error("Η καταχώρηση δεν βρέθηκε στο DataFrame.")
-                st.stop()
+            delete_submitted = st.form_submit_button("Οριστική Διαγραφή 🗑️", help="Αυτή η ενέργεια δεν αναιρείται!")
 
-            # Βρίσκουμε την gspread row index (1-based)
-            # Η gspread row index (1-based) είναι το Internal_ID + 1 (Internal_ID = Pandas index + 1)
-            gspread_row_index = int(post_id) + 1 # Χρησιμοποιούμε το Internal_ID + 1
+            if delete_submitted:
+                # gspread row index (1-based) = Internal_ID + 1
+                gspread_row_index = int(selected_post_row['Internal_ID']) + 1 
 
-            try:
-                sh = gc.open(SHEET_NAME)
-                ws = sh.get_worksheet(0)
-                
-                ws.delete_rows(gspread_row_index)
-                
-                st.cache_data.clear()
-                st.success(f"🗑️ Η καταχώρηση (ID: {post_id}) διαγράφηκε επιτυχώς.")
-                st.rerun()
+                try:
+                    sh = gc.open(SHEET_NAME)
+                    ws = sh.get_worksheet(0)
+                    ws.delete_rows(gspread_row_index)
+                    
+                    st.cache_data.clear()
+                    st.success(f"🗑️ Η καταχώρηση (ID: {selected_post_row['Internal_ID']}) διαγράφηκε επιτυχώς.")
+                    st.rerun()
 
-            except Exception as e:
-                st.error(f"Σφάλμα κατά τη διαγραφή από το Google Sheet. Λεπτομέρειες: {e}")
+                except Exception as e:
+                    st.error(f"Σφάλμα κατά τη διαγραφή από το Google Sheet. Λεπτομέρειες: {e}")
                 
     st.markdown("---")
 
@@ -508,7 +650,7 @@ selected_school = st.selectbox(
 if selected_school and selected_school != "-- Επιλέξτε --" and not full_df.empty:
 
     logged_in_school = st.session_state.get('logged_in_school')
-    logged_in_userid = st.session_state.get('logged_in_userid') # **ΝΕΟ**
+    logged_in_userid = st.session_state.get('logged_in_userid') 
 
     # --------------------------------------------------------------------------
     # ΕΛΕΓΧΟΣ ΠΡΟΣΒΑΣΗΣ ΦΟΡΜΑΣ ΚΑΤΑΧΩΡΗΣΗΣ / ΔΙΑΧΕΙΡΙΣΗΣ
@@ -523,10 +665,10 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
         st.markdown("---")
         
     elif is_authenticated:
-        st.warning(f"Είστε συνδεδεμένος ως εκπαιδευτικός του **{logged_in_school}**. Για καταχώρηση, πρέπει να επιλέξετε το σχολείο σας ('{logged_in_school}').")
+        st.warning(f"Είστε συνδεδεμένος ως εκπαιδευτικός του **{logged_in_school}**. Για καταχώρηση/διαχείριση, πρέπει να επιλέξετε το σχολείο σας ('{logged_in_school}').")
         st.markdown("---")
     else:
-        st.info("Για να δείτε/χρησιμοποιήσετε τη φόρμα καταχώρησης, παρακαλώ συνδεθείτε ως εκπαιδευτικός από την πλαϊνή στήλη (sidebar).")
+        st.info("Για να δείτε/χρησιμοποιήσετε τη φόρμα καταχώρησης/διαχείρισης, παρακαλώ συνδεθείτε ως εκπαιδευτικός από την πλαϊνή στήλη (sidebar).")
         st.markdown("---")
 
 
