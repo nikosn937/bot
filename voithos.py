@@ -775,9 +775,11 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                         css_class += ' info-card-link'
                         link_description = row['Info'].strip()
                         link_url = row['URL'].strip()
-                        # ΔΙΟΡΘΩΣΗ: Χρησιμοποιούμε quote_plus για να εξασφαλίσουμε σωστή λειτουργία του link στο HTML
+                        # ΔΙΟΡΘΩΣΗ: Χρησιμοποιούμε quote_plus(..., safe=':/') και αφαιρούμε τις γωνιακές αγκύλες στο HTML
                         safe_url = quote_plus(link_url, safe=':/') 
-                        content = f"🔗 **Σύνδεσμος:** [<span style='color: #1A5276;'>{link_description}</span>](<{safe_url}>)"
+                        content = f"🔗 **Σύνδεσμος:** [<span style='color: #1A5276;'>{link_description}</span>](href='{safe_url}' target='_blank')>"
+                        # Σωστή σύνταξη HTML: <a href='...' target='_blank'>Link Text</a>
+                        content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #1A5276; text-decoration: none;'>{link_description}</a>"
                     elif item_type == 'text':
                         css_class += ' info-card-text'
                         content = f"💬 **Περιγραφή:** {row['Info']}"
@@ -849,9 +851,10 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                             link_description = info.strip()
                             link_url = url.strip()
                             if link_url:
-                                # ΔΙΟΡΘΩΣΗ: Χρησιμοποιούμε quote_plus για να εξασφαλίσουμε σωστή λειτουργία του link στο HTML
+                                # ΔΙΟΡΘΩΣΗ: Χρησιμοποιούμε quote_plus(..., safe=':/') και αφαιρούμε τις γωνιακές αγκύλες στο HTML
                                 safe_url = quote_plus(link_url, safe=':/')
-                                content = f"🔗 **Σύνδεσμος:** [<span style='color: #1A5276;'>{link_description}</span>](<{safe_url}>)"
+                                # Σωστή σύνταξη HTML: <a href='...' target='_blank'>Link Text</a>
+                                content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #1A5276; text-decoration: none;'>{link_description}</a>"
                             else:
                                 content = f"⚠️ **Προσοχή:** Καταχώρηση συνδέσμου χωρίς URL. Περιγραφή: {link_description}"
 
