@@ -144,6 +144,15 @@ def load_data():
         
         # Καθαρισμός/Επεξεργασία δεδομένων
         df = df.dropna(subset=['Keyword', 'Date', 'School', 'Tmima'], how='any')
+        
+        # ΝΕΟ: Εφαρμόζουμε .str.strip() σε όλες τις κρίσιμες string στήλες για ασφάλεια
+        # Αυτό διορθώνει τυχόν κενά που μπορεί να έχουν προστεθεί στις νέες εγγραφές
+        string_cols = ['Keyword', 'Info', 'URL', 'Type', 'School', 'Tmima', 'UserId']
+        for col in string_cols:
+            if col in df.columns:
+                # Χρησιμοποιούμε .astype(str) για να εξασφαλίσουμε ότι είναι strings πριν το strip
+                df[col] = df[col].astype(str).str.strip()
+
         df['Date'] = pd.to_datetime(df['Date'], format=DATE_FORMAT, errors='coerce')
         # Επεξεργασία της ActionDate
         df['ActionDate'] = pd.to_datetime(df['ActionDate'], format=DATE_FORMAT, errors='coerce')
@@ -181,6 +190,10 @@ def load_users_data():
             return pd.DataFrame()
 
         df_users = df_users.dropna(subset=required_cols, how='any')
+        
+        # Καθαρισμός των τιμών των χρηστών (UserId, School, UserName, Password)
+        for col in required_cols:
+             df_users[col] = df_users[col].astype(str).str.strip()
 
         return df_users
 
@@ -262,7 +275,6 @@ def submit_entry(new_entry_list):
         st.session_state['entry_type'] = 'Text'
         if 'new_url_value' in st.session_state:
              st.session_state['new_url_value'] = "" # Μηδενίζουμε και το URL
-        # Η γραμμή για το 'calendar_check_d1' ΑΦΑΙΡΕΘΗΚΕ για να αποφευχθεί το σφάλμα
 
         # Καθαρισμός cache και επανεκτέλεση
         st.cache_data.clear()
@@ -690,6 +702,8 @@ def manage_user_posts(df, logged_in_userid):
     """Εμφανίζει και επιτρέπει τη διαχείριση (διόρθωση/διαγραφή) των καταχωρήσεων του χρήστη."""
     
     # Χρησιμοποιούμε τη στήλη 'UserId' για το φιλτράρισμα
+    # Το df.get('UserId', '') διασφαλίζει ότι υπάρχει η στήλη.
+    # Το .astype(str).str.strip() έχει γίνει πλέον στη load_data, αλλά το διατηρούμε για διπλό έλεγχο.
     user_posts = df[df.get('UserId', '').astype(str).str.strip() == logged_in_userid].copy()
     logged_in_school = st.session_state.get('logged_in_school') # Χρειαζόμαστε το σχολείο για το edit form
     
@@ -837,7 +851,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
         st.markdown("---")
         
     elif is_authenticated:
-        st.warning(f"Είστε συνδεδεμένος ως εκπαιδευτικός του **{logged_in_school}**. Για καταχώρηση/διαχείριση, πρέπει να επιλέξετε το σχολείο σας ('{logged_in_school}').")
+        st.warning(f"Είστε συνδεδεμένος ως εκπαιδευτικός του **{logged_in_school}** (UserId: {logged_in_userid}). Για καταχώρηση/διαχείριση, πρέπει να επιλέξετε το σχολείο σας ('{logged_in_school}').")
         st.markdown("---")
     else:
         st.info("Για να δείτε/χρησιμοποιήσετε τη φόρμα καταχώρησης/διαχείρισης, παρακαλώ συνδεθείτε ως εκπαιδευτικός από την πλαϊνή στήλη (sidebar).")
