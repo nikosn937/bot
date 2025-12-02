@@ -6,6 +6,8 @@ import re
 from typing import List
 from urllib.parse import quote_plus
 import numpy as np 
+# ΝΕΟ: Εισαγωγή του component ημερολογίου
+from streamlit_calendar import calendar
 
 # --------------------------------------------------------------------------------
 # 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS) & CSS
@@ -56,26 +58,7 @@ def apply_custom_css():
             .info-card-text {
                 border-left: 5px solid #F39C12; 
             }
-            /* ΝΕΟ CSS: Κάρτες Ημερολογίου (Calendar Agenda View) */
-            .calendar-card {
-                position: relative;
-                padding: 15px 15px 15px 30px; /* Προσθήκη padding αριστερά για τη γραμμή */
-                margin-bottom: 15px;
-                border-radius: 8px;
-                box-shadow: 0 4px 8px 0 rgba(0,0,0,0.1);
-                background-color: #EBF5FB; /* Πολύ ανοιχτό μπλε/λευκό */
-            }
-            /* Η κάθετη γραμμή του Calendar/Timeline */
-            .calendar-card::before {
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 10px; /* Θέση της γραμμής */
-                bottom: 0;
-                width: 5px; /* Πάχος γραμμής */
-                background-color: #2E86C1; /* Σκούρο μπλε για έμφαση */
-                border-radius: 2px;
-            }
+            /* Αφαιρέθηκε το .calendar-card */
             
             .card-date {
                 font-size: 0.9em;
@@ -104,11 +87,8 @@ def apply_custom_css():
                     background-color: #1a1a1a; 
                     box-shadow: 0 4px 8px 0 rgba(255,255,255,0.1); 
                 }
-                /* ΝΕΟ: Dark Mode για Calendar Card */
-                .calendar-card {
-                    background-color: #1a1a2e; /* Πολύ σκούρο μπλε/μαύρο */
-                    box-shadow: 0 4px 8px 0 rgba(255,255,255,0.1); 
-                }
+                /* ΔΕΝ ΧΡΕΙΑΖΕΤΑΙ ΤΟ .calendar-card για το component */
+                
                 .card-date, .card-keyword {
                      /* Διατηρούμε το κείμενο ευανάγνωστο στο Dark Mode */
                     color: #999999; 
@@ -277,6 +257,41 @@ def create_search_maps(df):
             tag_to_keyword_map[tag].add(keyword)
             
     return tag_to_keyword_map, keyword_to_data_map
+
+# --------------------------------------------------------------------------------
+# ΝΕΑ: Συνάρτηση μετατροπής DataFrame σε μορφή FullCalendar Events
+# --------------------------------------------------------------------------------
+def create_calendar_events(df: pd.DataFrame) -> List[dict]:
+    """Μετατρέπει τις καταχωρήσεις με ActionDate σε λίστα events για το streamlit-calendar."""
+    events = []
+    
+    # Φιλτράρουμε μόνο τις καταχωρήσεις με έγκυρη ActionDate
+    df_filtered = df[pd.notna(df['ActionDate'])].copy()
+    
+    for _, row in df_filtered.iterrows():
+        # Ημερομηνία έναρξης σε μορφή YYYY-MM-DD
+        start_date_str = row['ActionDate'].strftime('%Y-%m-%d')
+        
+        # Δημιουργία τίτλου
+        title = f"[{row['Tmima']}] {row['Keyword']} - {row['Info']}"
+        
+        # Event dictionary
+        event = {
+            "title": title,
+            "start": start_date_str,
+            "allDay": True,
+            # Προσθέτουμε επιπλέον ιδιότητες για μελλοντική χρήση (π.χ. κλικ σε event)
+            "extendedProps": {
+                "url": row['URL'],
+                "type": row['Type'],
+                "internal_id": row['Internal_ID'],
+                "info": row['Info']
+            }
+        }
+        
+        events.append(event)
+        
+    return events
 
 
 # --------------------------------------------------------------------------------
@@ -737,7 +752,7 @@ def manage_user_posts(df, logged_in_userid):
         return
 
     st.header("✏️ Διαχείριση Καταχώρησης")
-    st.info(f"Εμφανίζονται οι **{len(user_posts)}** καταχωρήσεις σας. Μπορείτε να τις επεξεργαστείτε ή να τις διαγράψετε.")
+    st.info(f"Εμφανίζονται οι **{len(user_posts)}** καταχωρήσεις σας. Μπορείτε να τις επεξεργαστείτε ή να τις διαγράψτε.")
     
     user_posts = user_posts.sort_values(by='Date', ascending=False)
     
@@ -959,88 +974,72 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                 st.markdown("---")
 
             # ----------------------------------------------------------------------
-            # ΕΝΟΤΗΤΑ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ (ΗΜΕΡΟΛΟΓΙΟ) - ΝΕΑ ΕΜΦΑΝΙΣΗ
+            # ΝΕΑ ΕΝΟΤΗΤΑ: ΠΛΗΡΕΣ ΗΜΕΡΟΛΟΓΙΟ (CALENDAR GRID VIEW)
             # ----------------------------------------------------------------------
             
-            # Υπολογισμός των 30 ημερών από σήμερα
-            today = datetime.now().date()
-            future_limit = today + timedelta(days=30)
-            
-            # ΦΙΛΤΡΟ:
-            # 1. Πρέπει να υπάρχει ActionDate (δεν είναι NaT - Not a Time)
-            # 2. Η ActionDate πρέπει να είναι στο μέλλον (από σήμερα και για 30 μέρες)
-            future_posts = filtered_df[
-                (pd.notna(filtered_df['ActionDate'])) & 
-                (filtered_df['ActionDate'].dt.date >= today) & 
-                (filtered_df['ActionDate'].dt.date <= future_limit)
-            ].copy()
+            # Φιλτράρισμα μόνο για καταχωρήσεις με ActionDate
+            calendar_df = filtered_df[pd.notna(filtered_df['ActionDate'])].copy()
 
+            if not calendar_df.empty:
+                st.markdown(f"## 📅 Πλήρες Ημερολόγιο Ενεργειών ({selected_tmima})")
+                st.info("Εμφανίζονται όλες οι προγραμματισμένες ενέργειες σε διαδραστική προβολή Ημερολογίου.")
 
-            if not future_posts.empty:
-                st.markdown(f"## 📅 Προσεχείς Ενέργειες/Γεγονότα ({selected_tmima})")
-                st.info(f"Εμφανίζονται οι καταχωρήσεις που πρέπει να γίνουν από σήμερα μέχρι την {future_limit.strftime(DATE_FORMAT)}. (Agenda View)")
-
-                # ΠΡΟΣΘΗΚΗ: Δημιουργία στήλης με μόνο την ημερομηνία για ομαδοποίηση
-                future_posts['Action_Date_Only'] = future_posts['ActionDate'].dt.date
+                # Μετατροπή των δεδομένων στην απαιτούμενη μορφή
+                events = create_calendar_events(calendar_df)
                 
-                # Ταξινόμηση βάση της ActionDate
-                future_posts = future_posts.sort_values(by='ActionDate', ascending=True)
-
-                # ΝΕΟ: Ομαδοποίηση ανά ημερομηνία
-                grouped_posts = future_posts.groupby('Action_Date_Only')
-
-                for date_only, group in grouped_posts:
-                    # Εμφάνιση της ΗΜΕΡΟΜΗΝΙΑΣ ως επικεφαλίδα
-                    date_str = date_only.strftime(DATE_FORMAT)
+                # Ρυθμίσεις για το FullCalendar (με ελληνικό locale)
+                calendar_options = {
+                    "initialView": "dayGridMonth", # Αρχική προβολή: Μήνας
+                    "headerToolbar": {
+                        # Κουμπιά πλοήγησης και προβολών
+                        "left": "today prev,next",
+                        "center": "title",
+                        "right": "dayGridMonth,timeGridWeek,timeGridDay",
+                    },
+                    "editable": False, # Απενεργοποίηση Drag & Drop
+                    "selectable": True, # Επιτρέπει την επιλογή ημερομηνίας/γεγονότος
+                    "locale": "el", # Ορισμός της γλώσσας σε Ελληνικά
+                    # Προσαρμογή εμφάνισης (χρώμα event)
+                    "eventDidMount": "{ event, element, view } => { element.style.backgroundColor = '#2E86C1'; element.style.borderColor = '#2E86C1'; }",
+                }
+                
+                # Κλήση του component
+                calendar_component_result = calendar(
+                    events=events,
+                    options=calendar_options,
+                    key="full_calendar_view"
+                )
+                
+                # Χειρισμός του αποτελέσματος αν πατηθεί ένα event
+                if calendar_component_result and 'event' in calendar_component_result and calendar_component_result['event']:
+                    st.markdown("---")
+                    st.subheader("Λεπτομέρειες Επιλεγμένου Γεγονότος")
                     
-                    # Υπολογισμός ημερών που απομένουν για έμφαση
-                    days_remaining = (date_only - today).days
-                    days_message = ""
-                    if days_remaining == 0:
-                        days_message = "**ΣΗΜΕΡΑ!**"
-                    elif days_remaining == 1:
-                        days_message = "**ΑΥΡΙΟ!**"
-                    elif days_remaining > 1:
-                        days_message = f"Σε **{days_remaining}** ημέρες"
+                    event_data = calendar_component_result['event']
                     
-                    # Επικεφαλίδα Ημέρας
-                    st.markdown(f"### 🗓️ {date_str} - {days_message}")
-                    st.markdown('<div style="margin-bottom: 10px; border-bottom: 1px dashed #D6EAF8;"></div>', unsafe_allow_html=True) # Οπτικός διαχωρισμός
-
-                    # Εμφάνιση των γεγονότων για αυτήν την ημέρα
-                    for _, row in group.iterrows():
-                        
-                        keyword = row['Keyword']
-                        item_type = row['Type'].strip().lower()
-
-                        # ΝΕΟ: Χρησιμοποιούμε τη calendar-card για Timeline εμφάνιση
-                        css_class = 'calendar-card' 
-                        content = ""
-                        
-                        if item_type == 'link':
-                            link_description = row['Info'].strip()
-                            link_url = row['URL'].strip()
-                            safe_url = quote_plus(link_url, safe=':/') 
-                            # Αλλάζουμε το χρώμα του link για να ταιριάζει με το Calendar Card
-                            content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #2E86C1; text-decoration: none;'>{link_description}</a>"
-                        elif item_type == 'text':
-                            content = f"💬 **Περιγραφή:** {row['Info']}"
-
-                        # Δόμηση της κάρτας HTML (αφαιρούμε την ημερομηνία από την κάρτα, καθώς είναι στην επικεφαλίδα)
-                        card_html = f"""
-                        <div class="{css_class}">
-                            {content}
-                            <div class="card-keyword">🔑 Keyword: {keyword}</div>
-                        </div>
-                        """
-                        st.markdown(card_html, unsafe_allow_html=True)
-
+                    title = event_data.get('title', 'N/A')
+                    start_date = event_data.get('start', 'N/A')
+                    # Διαβάζουμε τις custom ιδιότητες
+                    extended_props = event_data.get('extendedProps', {})
+                    url = extended_props.get('url', '')
+                    info = extended_props.get('info', '')
+                    
+                    st.markdown(f"**Τίτλος:** `{title.split(']')[0]}]`")
+                    st.markdown(f"**Περιγραφή:** `{info}`")
+                    st.markdown(f"**Ημερομηνία:** {start_date[:10]}") # Κρατάμε μόνο την ημερομηνία
+                    
+                    if url:
+                        safe_url = quote_plus(url, safe=':/')
+                        st.markdown(f"**Σύνδεσμος:** [Άνοιγμα Συνδέσμου]({safe_url})")
+                    else:
+                        st.markdown("**Σύνδεσμος:** Δεν υπάρχει")
+                
                 st.markdown("---") 
             else:
-                st.info(f"Δεν υπάρχουν προγραμματισμένες ενέργειες/γεγονότα για το τμήμα {selected_tmima} τις επόμενες 30 ημέρες.")
+                st.info(f"Δεν υπάρχουν προγραμματισμένες ενέργειες για το τμήμα {selected_tmima}.")
                 st.markdown("---")
             # ----------------------------------------------------------------------
-            # ΤΕΛΟΣ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ
+            # ΤΕΛΟΣ: ΠΛΗΡΕΣ ΗΜΕΡΟΛΟΓΙΟ
             # ----------------------------------------------------------------------
 
 
