@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import re
 from typing import List
 from urllib.parse import quote_plus
+import numpy as np # Χρειάζεται για το pd.NaT
 
 # --------------------------------------------------------------------------------
 # 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS) & CSS
@@ -135,8 +136,8 @@ def load_data():
         df = pd.DataFrame(data[1:], columns=headers)
         df.columns = df.columns.str.strip()
         
-        # ΠΡΟΣΟΧΗ: Ελέγχουμε τις βασικές στήλες
-        required_cols = ['Keyword', 'Info', 'URL', 'Type', 'Date', 'School', 'Tmima', 'UserId']
+        # ΠΡΟΣΟΧΗ: Ελέγχουμε τις βασικές στήλες (ΠΡΟΣΘΗΚΗ: 'ActionDate')
+        required_cols = ['Keyword', 'Info', 'URL', 'Type', 'Date', 'School', 'Tmima', 'UserId', 'ActionDate']
         if not all(col in df.columns for col in required_cols):
             st.error(f"Σφάλμα δομής Sheet 'ClassBot': Οι επικεφαλίδες πρέπει να είναι: {', '.join(required_cols)}.")
             return pd.DataFrame(), []
@@ -144,6 +145,8 @@ def load_data():
         # Καθαρισμός/Επεξεργασία δεδομένων
         df = df.dropna(subset=['Keyword', 'Date', 'School', 'Tmima'], how='any')
         df['Date'] = pd.to_datetime(df['Date'], format=DATE_FORMAT, errors='coerce')
+        # ΝΕΑ ΓΡΑΜΜΗ: Επεξεργασία της ActionDate
+        df['ActionDate'] = pd.to_datetime(df['ActionDate'], format=DATE_FORMAT, errors='coerce')
         df = df.dropna(subset=['Date'])
         
         available_schools = sorted(df['School'].unique().tolist()) if 'School' in df.columns else []
@@ -220,9 +223,9 @@ def create_search_maps(df):
     """Δημιουργεί τους χάρτες αναζήτησης μετά το φιλτράρισμα."""
     df_sorted = df.sort_values(by=['Keyword', 'Date'], ascending=[True, False])
     
-    # Το zip περιλαμβάνει 8 στοιχεία: (Info, URL, Type, Date, School, Tmima, UserId, Internal_ID)
+    # Το zip περιλαμβάνει 9 στοιχεία: (Info, URL, Type, Date, School, Tmima, UserId, ActionDate, Internal_ID)
     keyword_to_data_map = df_sorted.groupby('Keyword').apply(
-        lambda x: list(zip(x['Info'], x['URL'], x['Type'], x['Date'], x['School'], x['Tmima'], x.get('UserId', ''), x['Internal_ID']))
+        lambda x: list(zip(x['Info'], x['URL'], x['Type'], x['Date'], x['School'], x['Tmima'], x.get('UserId', ''), x.get('ActionDate', pd.NaT), x['Internal_ID']))
     ).to_dict()
 
     tag_to_keyword_map = {}
@@ -369,6 +372,32 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
             else: 
                 new_info = st.text_input("Περιγραφή Συνδέσμου (Info)", key="i2_text_input")
 
+            # ΠΕΔΙΑ ΓΙΑ ΤΟ ΗΜΕΡΟΛΟΓΙΟ ΕΝΕΡΓΕΙΩΝ
+            st.markdown("---")
+            st.subheader("Ρυθμίσεις Ημερολογίου")
+            
+            # 1. Checkbox
+            show_in_calendar = st.checkbox(
+                "Εμφάνιση στο Ημερολόγιο (ως επικείμενη ενέργεια)",
+                key="calendar_check_d1",
+                on_change=keep_expander_open # Για να μη χάνεται η φόρμα
+            )
+            
+            new_action_date_str = "" # Default Value
+
+            # 2. Date Input (Εμφανίζεται μόνο αν επιλεγεί το checkbox)
+            if show_in_calendar:
+                new_action_date_obj = st.date_input(
+                    "Ημερομηνία Ενέργειας (Action Date):", 
+                    value=datetime.today().date() + timedelta(days=7), # Προεπιλογή 1 εβδομάδα μετά
+                    key="action_date_d1",
+                    on_change=keep_expander_open
+                )
+                new_action_date_str = new_action_date_obj.strftime(DATE_FORMAT)
+            
+            st.markdown("---")
+            
+            # Ημερομηνία Καταχώρησης (Διατηρείται)
             new_date_obj = st.date_input("Ημερομηνία Καταχώρησης (Date)", value=datetime.today().date(), key="d1_date")
             new_date_str = new_date_obj.strftime(DATE_FORMAT)
             
@@ -383,19 +412,24 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
                     if not final_url.lower().startswith(('http://', 'https://', 'ftp://')):
                         final_url = 'https://' + final_url
                 
-                # ΕΛΕΓΧΟΣ ΕΓΚΥΡΟΤΗΤΑΣ ΤΜΗΜΑΤΟΣ (αν δεν έγινε επιλογή)
+                # ΕΛΕΓΧΟΣ ΕΓΚΥΡΟΤΗΤΑΤΟΣ ΤΜΗΜΑΤΟΣ (αν δεν έγινε επιλογή)
                 tmima_pattern = re.compile(r'^[Α-Ω0-9]+$')
 
                 if not tmima_pattern.match(final_tmima) or final_tmima == "":
                     st.error("⚠️ Σφάλμα Τμήματος: Το πεδίο 'Τμήμα' είναι κενό ή περιέχει μη επιτρεπτούς χαρακτήρες. Χρησιμοποιήστε μόνο Ελληνικούς κεφαλαίους (Α-Ω) και αριθμούς (0-9).")
                     st.stop()
                 
+                # ΕΛΕΓΧΟΣ ΕΓΚΥΡΟΤΗΤΑΣ ΗΜΕΡΟΛΟΓΙΟΥ
+                if show_in_calendar and not new_action_date_str:
+                    st.error("⚠️ Σφάλμα Ημερολογίου: Επιλέξατε εμφάνιση στο Ημερολόγιο, αλλά δεν ορίσατε 'Ημερομηνία Ενέργειας'.")
+                    st.stop()
+                    
                 # Έλεγχος πληρότητας
                 if not new_keyword or not new_info or not new_school or (st.session_state.entry_type == 'Link' and not final_url):
                     st.error("Παρακαλώ συμπληρώστε όλα τα πεδία (Φράση-Κλειδί, Περιγραφή, Σχολείο, Τμήμα και Σύνδεσμο αν είναι Link).")
                     st.stop()
                 else:
-                    # Σειρά στο ClassBot Sheet: Keyword, Info, URL, Type, Date, School, Tmima, UserId
+                    # Σειρά στο ClassBot Sheet: Keyword, Info, URL, Type, Date, School, Tmima, UserId, ActionDate
                     new_entry_list = [
                         new_keyword.strip(), 
                         new_info.strip(), 
@@ -404,7 +438,8 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
                         new_date_str,
                         new_school, 
                         final_tmima, 
-                        logged_in_userid # UserId: Καταχώρηση του μοναδικού ID χρήστη
+                        logged_in_userid,
+                        new_action_date_str # ΝΕΑ ΤΙΜΗ: ActionDate
                     ]
                     submit_entry(new_entry_list)
 
@@ -419,10 +454,16 @@ def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
     current_date = entry_data['Date'].date()
     current_tmima = entry_data['Tmima']
     current_userid = entry_data['UserId']
+    current_action_date = entry_data.get('ActionDate')
     internal_id = entry_data['Internal_ID'] 
 
     tmimata_list = load_tmima_data(logged_in_school)
     
+    # ΠΡΟΣΔΙΟΡΙΣΜΟΣ ΑΡΧΙΚΗΣ ΤΙΜΗΣ ΓΙΑ ΤΟ ΗΜΕΡΟΛΟΓΙΟ
+    is_in_calendar_initial = pd.notna(current_action_date)
+    current_action_date_value = current_action_date.date() if is_in_calendar_initial else datetime.today().date() + timedelta(days=7)
+
+
     # --------------------------------------------------------------------------
     # 1. ΤΥΠΟΣ ΚΑΤΑΧΩΡΗΣΗΣ (ΕΚΤΟΣ ΦΟΡΜΑΣ ΓΙΑ ΔΥΝΑΜΙΚΟ RERUN)
     # --------------------------------------------------------------------------
@@ -470,9 +511,41 @@ def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
             value=current_info, 
             key=f"edit_info_text_{internal_id}"
         )
+
+    # --------------------------------------------------------------------------
+    # 3. ΡΥΘΜΙΣΕΙΣ ΗΜΕΡΟΛΟΓΙΟΥ (ΕΚΤΟΣ ΦΟΡΜΑΣ)
+    # --------------------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("Ρυθμίσεις Ημερολογίου")
+    
+    # 1. Checkbox
+    if f'edit_calendar_check_{internal_id}' not in st.session_state:
+        st.session_state[f'edit_calendar_check_{internal_id}'] = is_in_calendar_initial
+
+    show_in_calendar_edit = st.checkbox(
+        "Εμφάνιση στο Ημερολόγιο (ως επικείμενη ενέργεια)",
+        value=st.session_state[f'edit_calendar_check_{internal_id}'],
+        key=f"calendar_check_edit_{internal_id}",
+    )
+    
+    edited_action_date_str = "" # Default Value
+
+    # 2. Date Input (Εμφανίζεται μόνο αν επιλεγεί το checkbox)
+    if show_in_calendar_edit:
+        edited_action_date_obj = st.date_input(
+            "Ημερομηνία Ενέργειας (Action Date):", 
+            value=current_action_date_value, 
+            key=f"action_date_edit_{internal_id}"
+        )
+        edited_action_date_str = edited_action_date_obj.strftime(DATE_FORMAT)
+        
+    # Ενημέρωση της session state για το checkbox
+    st.session_state[f'edit_calendar_check_{internal_id}'] = show_in_calendar_edit
+    
+    st.markdown("---")
     
     # --------------------------------------------------------------------------
-    # 3. ΦΟΡΜΑ ΥΠΟΒΟΛΗΣ (ΕΝΤΟΣ ΦΟΡΜΑΣ)
+    # 4. ΦΟΡΜΑ ΥΠΟΒΟΛΗΣ (ΕΝΤΟΣ ΦΟΡΜΑΣ)
     # --------------------------------------------------------------------------
 
     with st.form(f"edit_form_{internal_id}"):
@@ -507,7 +580,7 @@ def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
             key=f"edit_keyword_{internal_id}"
         )
 
-        # Ημερομηνία
+        # Ημερομηνία Καταχώρησης
         edited_date_obj = st.date_input(
             "Ημερομηνία Καταχώρησης (Date):", 
             value=current_date, 
@@ -531,13 +604,18 @@ def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
             if not tmima_pattern.match(final_edited_tmima_cleaned) or final_edited_tmima_cleaned == "":
                 st.error("⚠️ Σφάλμα Τμήματος: Το πεδίο 'Τμήμα' είναι κενό ή περιέχει μη επιτρεπτούς χαρακτήρες. Χρησιμοποιήστε μόνο Ελληνικούς κεφαλαίους (Α-Ω) και αριθμούς (0-9).")
                 st.stop()
+            
+            # Έλεγχος εγκυρότητας ActionDate
+            if show_in_calendar_edit and not edited_action_date_str:
+                st.error("⚠️ Σφάλμα Ημερολογίου: Επιλέξατε εμφάνιση στο Ημερολόγιο, αλλά δεν ορίσατε 'Ημερομηνία Ενέργειας'.")
+                st.stop()
 
             # Έλεγχος πληρότητας
             if not edited_keyword or not edited_info or (st.session_state[f'edit_entry_type_{internal_id}'] == 'Link' and not final_edited_url):
                 st.error("Παρακαλώ συμπληρώστε όλα τα πεδία (Φράση-Κλειδί, Περιγραφή και Σύνδεσμο αν είναι Link).")
                 st.stop()
             else:
-                # Sheet: Keyword, Info, URL, Type, Date, School, Tmima, UserId
+                # Sheet: Keyword, Info, URL, Type, Date, School, Tmima, UserId, ActionDate
                 updated_entry_list = [
                     edited_keyword.strip(), 
                     edited_info.strip(), 
@@ -546,7 +624,8 @@ def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
                     edited_date_str,
                     logged_in_school, # Το σχολείο δεν αλλάζει
                     final_edited_tmima_cleaned,  
-                    current_userid # Ο UserId δεν αλλάζει
+                    current_userid, # Ο UserId δεν αλλάζει
+                    edited_action_date_str # ΝΕΑ ΤΙΜΗ: ActionDate
                 ]
                 
                 # Καλείται η συνάρτηση update_entry
@@ -629,8 +708,11 @@ def manage_user_posts(df, logged_in_userid):
         date_str = row['Date'].strftime(DATE_FORMAT)
         tmima = row['Tmima']
         keyword = row['Keyword']
+        # Εμφάνιση ειδοποίησης αν είναι στο ημερολόγιο
+        calendar_status = " [📅]" if pd.notna(row.get('ActionDate')) else ""
+        
         info_preview = row['Info'][:70] + "..." if len(row['Info']) > 70 else row['Info']
-        option_label = f"[{date_str} - {tmima}] {keyword} - {info_preview} (ID: {row['Internal_ID']})"
+        option_label = f"[{date_str} - {tmima}]{calendar_status} {keyword} - {info_preview} (ID: {row['Internal_ID']})"
         post_options.append(option_label)
         post_details_map[option_label] = row # Αποθηκεύουμε ολόκληρη τη σειρά (DataFrame row)
 
@@ -789,7 +871,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
             filtered_df = filtered_df_school[filtered_df_school['Tmima'] == selected_tmima]
 
             # ----------------------------------------------------------------------
-            # ΕΜΦΑΝΙΣΗ ΤΕΛΕΥΤΑΙΩΝ 2 ΗΜΕΡΩΝ (Με χρήση CSS Card Styling & Link Fix)
+            # ΕΜΦΑΝΙΣΗ ΤΕΛΕΥΤΑΙΩΝ 2 ΗΜΕΡΩΝ 
             # ----------------------------------------------------------------------
 
             two_days_ago = datetime.now() - timedelta(days=2)
@@ -836,6 +918,75 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                 st.info(f"Δεν υπάρχουν πρόσφατες ανακοινώσεις (τελευταίες 2 ημέρες) για το τμήμα {selected_tmima}.")
                 st.markdown("---")
 
+            # ----------------------------------------------------------------------
+            # ΕΝΟΤΗΤΑ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ (ΗΜΕΡΟΛΟΓΙΟ)
+            # ----------------------------------------------------------------------
+            
+            # Υπολογισμός των 30 ημερών από σήμερα
+            today = datetime.now().date()
+            future_limit = today + timedelta(days=30)
+            
+            # ΝΕΟ ΦΙΛΤΡΟ:
+            # 1. Πρέπει να υπάρχει ActionDate (δεν είναι NaT - Not a Time)
+            # 2. Η ActionDate πρέπει να είναι στο μέλλον (από αύριο και για 30 μέρες)
+            future_posts = filtered_df[
+                (pd.notna(filtered_df['ActionDate'])) & # ΝΕΟ: Ελέγχει αν έχει οριστεί ημερομηνία ενέργειας
+                (filtered_df['ActionDate'].dt.date > today) & 
+                (filtered_df['ActionDate'].dt.date <= future_limit)
+            ].copy()
+
+
+            if not future_posts.empty:
+                st.markdown(f"## 📅 Προσεχείς Ενέργειες/Γεγονότα ({selected_tmima})")
+                st.info(f"Εμφανίζονται οι καταχωρήσεις που πρέπει να γίνουν μέχρι την {future_limit.strftime(DATE_FORMAT)}.")
+
+                # Ταξινόμηση βάσει της ActionDate
+                future_posts = future_posts.sort_values(by='ActionDate', ascending=True)
+
+                for _, row in future_posts.iterrows():
+                    # Χρησιμοποιούμε την ActionDate για την εμφάνιση
+                    date_obj = row['ActionDate'].date() 
+                    date_str = row['ActionDate'].strftime(DATE_FORMAT)
+                    
+                    keyword = row['Keyword']
+                    item_type = row['Type'].strip().lower()
+
+                    # Επιλογή κλάσης CSS: Χρησιμοποιούμε μπλε για τις επικείμενες ενέργειες
+                    css_class = 'info-card'
+                    content = ""
+                    
+                    if item_type == 'link':
+                        css_class += ' info-card-link'
+                        link_description = row['Info'].strip()
+                        link_url = row['URL'].strip()
+                        safe_url = quote_plus(link_url, safe=':/') 
+                        content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #1A5276; text-decoration: none;'>{link_description}</a>"
+                    elif item_type == 'text':
+                        css_class += ' info-card-text'
+                        content = f"💬 **Περιγραφή:** {row['Info']}"
+
+                    # Υπολογισμός ημερών που απομένουν για έμφαση
+                    days_remaining = (date_obj - today).days
+                    days_message = f"**Σε {days_remaining} ημέρες**" if days_remaining > 1 else "**ΑΥΡΙΟ!**" if days_remaining == 1 else "**ΣΗΜΕΡΑ!**"
+                    
+                    # Δόμηση της κάρτας HTML
+                    card_html = f"""
+                    <div class="{css_class}">
+                        <span class="card-date">🗓️ {date_str} ({days_message})</span>
+                        {content}
+                        <div class="card-keyword">🔑 Keyword: {keyword}</div>
+                    </div>
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
+
+                st.markdown("---") 
+            else:
+                st.info(f"Δεν υπάρχουν προγραμματισμένες ενέργειες/γεγονότα για το τμήμα {selected_tmima} τις επόμενες 30 ημέρες.")
+                st.markdown("---")
+            # ----------------------------------------------------------------------
+            # ΤΕΛΟΣ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ
+            # ----------------------------------------------------------------------
+
 
             st.markdown("## 🔍 Αναζήτηση Παλαιότερων Πληροφοριών")
             st.info("Για να βρείτε κάτι συγκεκριμένο ή παλαιότερο, πληκτρολογήστε τη φράση-κλειδί (keyword) παρακάτω.")
@@ -863,14 +1014,14 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                     all_results = []
 
                     for keyword in matching_keywords:
-                        # Το zip έχει 8 στοιχεία: (Info, URL, Type, Date, School, Tmima, UserId, Internal_ID)
+                        # Το zip έχει 9 στοιχεία: (Info, URL, Type, Date, School, Tmima, UserId, ActionDate, Internal_ID)
                         all_results.extend(keyword_to_data_map.get(keyword, []))
 
                     st.success(f"Βρέθηκαν **{len(all_results)}** πληροφορίες για το '{user_input}'.")
 
                     results_list = []
-                    # Αγνοούμε UserId και Internal_ID για την εμφάνιση. Προσθέτουμε πίσω το keyword για εμφάνιση.
-                    for info, url, item_type, date_obj, school, tmima, _, _ in all_results:
+                    # Αγνοούμε UserId, ActionDate και Internal_ID για την εμφάνιση. Προσθέτουμε πίσω το keyword για εμφάνιση.
+                    for info, url, item_type, date_obj, school, tmima, _, _, _ in all_results:
                         # Στοιχείο 7: Keyword
                         results_list.append((date_obj, info, url, item_type, school, tmima, keyword))
 
