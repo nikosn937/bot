@@ -145,8 +145,8 @@ def load_data():
         # Καθαρισμός/Επεξεργασία δεδομένων
         df = df.dropna(subset=['Keyword', 'Date', 'School', 'Tmima'], how='any')
         
-        # ΝΕΟ: Εφαρμόζουμε .str.strip() σε όλες τις κρίσιμες string στήλες για ασφάλεια
-        # Αυτό διορθώνει τυχόν κενά που μπορεί να έχουν προστεθεί στις νέες εγγραφές
+        # Εφαρμόζουμε .str.strip() σε όλες τις κρίσιμες string στήλες για ασφάλεια
+        # Διορθώνει το πρόβλημα του UserId που δεν φιλτράρεται σωστά
         string_cols = ['Keyword', 'Info', 'URL', 'Type', 'School', 'Tmima', 'UserId']
         for col in string_cols:
             if col in df.columns:
@@ -703,7 +703,6 @@ def manage_user_posts(df, logged_in_userid):
     
     # Χρησιμοποιούμε τη στήλη 'UserId' για το φιλτράρισμα
     # Το df.get('UserId', '') διασφαλίζει ότι υπάρχει η στήλη.
-    # Το .astype(str).str.strip() έχει γίνει πλέον στη load_data, αλλά το διατηρούμε για διπλό έλεγχο.
     user_posts = df[df.get('UserId', '').astype(str).str.strip() == logged_in_userid].copy()
     logged_in_school = st.session_state.get('logged_in_school') # Χρειαζόμαστε το σχολείο για το edit form
     
@@ -943,56 +942,74 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
             
             # ΦΙΛΤΡΟ:
             # 1. Πρέπει να υπάρχει ActionDate (δεν είναι NaT - Not a Time)
-            # 2. Η ActionDate πρέπει να είναι στο μέλλον (από αύριο και για 30 μέρες)
+            # 2. Η ActionDate πρέπει να είναι στο μέλλον (από σήμερα και για 30 μέρες)
             future_posts = filtered_df[
                 (pd.notna(filtered_df['ActionDate'])) & 
-                (filtered_df['ActionDate'].dt.date > today) & 
+                (filtered_df['ActionDate'].dt.date >= today) & 
                 (filtered_df['ActionDate'].dt.date <= future_limit)
             ].copy()
 
 
             if not future_posts.empty:
                 st.markdown(f"## 📅 Προσεχείς Ενέργειες/Γεγονότα ({selected_tmima})")
-                st.info(f"Εμφανίζονται οι καταχωρήσεις που πρέπει να γίνουν μέχρι την {future_limit.strftime(DATE_FORMAT)}.")
+                st.info(f"Εμφανίζονται οι καταχωρήσεις που πρέπει να γίνουν από σήμερα μέχρι την {future_limit.strftime(DATE_FORMAT)}.")
 
+                # ΠΡΟΣΘΗΚΗ: Δημιουργία στήλης με μόνο την ημερομηνία για ομαδοποίηση
+                future_posts['Action_Date_Only'] = future_posts['ActionDate'].dt.date
+                
                 # Ταξινόμηση βάση της ActionDate
                 future_posts = future_posts.sort_values(by='ActionDate', ascending=True)
 
-                for _, row in future_posts.iterrows():
-                    # Χρησιμοποιούμε την ActionDate για την εμφάνιση
-                    date_obj = row['ActionDate'].date() 
-                    date_str = row['ActionDate'].strftime(DATE_FORMAT)
-                    
-                    keyword = row['Keyword']
-                    item_type = row['Type'].strip().lower()
+                # ΝΕΟ: Ομαδοποίηση ανά ημερομηνία
+                grouped_posts = future_posts.groupby('Action_Date_Only')
 
-                    # Επιλογή κλάσης CSS: Χρησιμοποιούμε μπλε για τις επικείμενες ενέργειες
-                    css_class = 'info-card'
-                    content = ""
+                for date_only, group in grouped_posts:
+                    # Εμφάνιση της ΗΜΕΡΟΜΗΝΙΑΣ ως επικεφαλίδα
+                    date_str = date_only.strftime(DATE_FORMAT)
                     
-                    if item_type == 'link':
-                        css_class += ' info-card-link'
-                        link_description = row['Info'].strip()
-                        link_url = row['URL'].strip()
-                        safe_url = quote_plus(link_url, safe=':/') 
-                        content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #1A5276; text-decoration: none;'>{link_description}</a>"
-                    elif item_type == 'text':
-                        css_class += ' info-card-text'
-                        content = f"💬 **Περιγραφή:** {row['Info']}"
-
                     # Υπολογισμός ημερών που απομένουν για έμφαση
-                    days_remaining = (date_obj - today).days
-                    days_message = f"**Σε {days_remaining} ημέρες**" if days_remaining > 1 else "**ΑΥΡΙΟ!**" if days_remaining == 1 else "**ΣΗΜΕΡΑ!**"
+                    days_remaining = (date_only - today).days
+                    days_message = ""
+                    if days_remaining == 0:
+                        days_message = "**ΣΗΜΕΡΑ!**"
+                    elif days_remaining == 1:
+                        days_message = "**ΑΥΡΙΟ!**"
+                    elif days_remaining > 1:
+                        days_message = f"Σε **{days_remaining}** ημέρες"
                     
-                    # Δόμηση της κάρτας HTML
-                    card_html = f"""
-                    <div class="{css_class}">
-                        <span class="card-date">🗓️ {date_str} ({days_message})</span>
-                        {content}
-                        <div class="card-keyword">🔑 Keyword: {keyword}</div>
-                    </div>
-                    """
-                    st.markdown(card_html, unsafe_allow_html=True)
+                    # Επικεφαλίδα Ημέρας
+                    st.markdown(f"### 🗓️ {date_str} - {days_message}")
+                    st.markdown('<div style="margin-bottom: 10px; border-bottom: 1px dashed #D6EAF8;"></div>', unsafe_allow_html=True) # Οπτικός διαχωρισμός
+
+                    # Εμφάνιση των γεγονότων για αυτήν την ημέρα
+                    for _, row in group.iterrows():
+                        # Χρησιμοποιούμε την ActionDate για την εμφάνιση
+                        
+                        keyword = row['Keyword']
+                        item_type = row['Type'].strip().lower()
+
+                        # Επιλογή κλάσης CSS: Χρησιμοποιούμε μπλε για τις επικείμενες ενέργειες
+                        css_class = 'info-card'
+                        content = ""
+                        
+                        if item_type == 'link':
+                            css_class += ' info-card-link'
+                            link_description = row['Info'].strip()
+                            link_url = row['URL'].strip()
+                            safe_url = quote_plus(link_url, safe=':/') 
+                            content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #1A5276; text-decoration: none;'>{link_description}</a>"
+                        elif item_type == 'text':
+                            css_class += ' info-card-text'
+                            content = f"💬 **Περιγραφή:** {row['Info']}"
+
+                        # Δόμηση της κάρτας HTML (αφαιρούμε την ημερομηνία από την κάρτα, καθώς είναι στην επικεφαλίδα)
+                        card_html = f"""
+                        <div class="{css_class}">
+                            {content}
+                            <div class="card-keyword">🔑 Keyword: {keyword}</div>
+                        </div>
+                        """
+                        st.markdown(card_html, unsafe_allow_html=True)
 
                 st.markdown("---") 
             else:
