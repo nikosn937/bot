@@ -262,9 +262,7 @@ def submit_entry(new_entry_list):
         st.session_state['entry_type'] = 'Text'
         if 'new_url_value' in st.session_state:
              st.session_state['new_url_value'] = "" # Μηδενίζουμε και το URL
-        # Μηδενίζουμε και το calendar check state
-        if 'calendar_check_d1' in st.session_state:
-            st.session_state['calendar_check_d1'] = False
+        # Η γραμμή για το 'calendar_check_d1' ΑΦΑΙΡΕΘΗΚΕ για να αποφευχθεί το σφάλμα
 
         # Καθαρισμός cache και επανεκτέλεση
         st.cache_data.clear()
