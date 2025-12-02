@@ -2,3 +2,5 @@ streamlit
 pandas
 unidecode
 gspread
+streamlit-calendar
+numpy
