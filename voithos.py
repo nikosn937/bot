@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import re
 from typing import List
 from urllib.parse import quote_plus
-import numpy as np # Χρειάζεται για το pd.NaT
+import numpy as np 
 
 # --------------------------------------------------------------------------------
 # 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS) & CSS
@@ -145,7 +145,7 @@ def load_data():
         # Καθαρισμός/Επεξεργασία δεδομένων
         df = df.dropna(subset=['Keyword', 'Date', 'School', 'Tmima'], how='any')
         df['Date'] = pd.to_datetime(df['Date'], format=DATE_FORMAT, errors='coerce')
-        # ΝΕΑ ΓΡΑΜΜΗ: Επεξεργασία της ActionDate
+        # Επεξεργασία της ActionDate
         df['ActionDate'] = pd.to_datetime(df['ActionDate'], format=DATE_FORMAT, errors='coerce')
         df = df.dropna(subset=['Date'])
         
@@ -348,6 +348,7 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
             "Τύπος Καταχώρησης", 
             ('Text', 'Link'), 
             horizontal=True,
+            index=0 if st.session_state['entry_type'] == 'Text' else 1, # ΔΙΟΡΘΩΣΗ: Προσθήκη index
             key="radio_type_key"
         )
         
@@ -372,7 +373,7 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
             else: 
                 new_info = st.text_input("Περιγραφή Συνδέσμου (Info)", key="i2_text_input")
 
-            # ΠΕΔΙΑ ΓΙΑ ΤΟ ΗΜΕΡΟΛΟΓΙΟ ΕΝΕΡΓΕΙΩΝ
+            # ΠΕΔΙΑ ΓΙΑ ΤΟ ΗΜΕΡΟΛΟΓΙΟ ΕΝΕΡΓΕΙΩΝ - ΤΩΡΑ ΕΙΝΑΙ ΟΛΑ ΜΕΣΑ ΣΤΗ ΦΟΡΜΑ
             st.markdown("---")
             st.subheader("Ρυθμίσεις Ημερολογίου")
             
@@ -380,18 +381,18 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
             show_in_calendar = st.checkbox(
                 "Εμφάνιση στο Ημερολόγιο (ως επικείμενη ενέργεια)",
                 key="calendar_check_d1",
-                on_change=keep_expander_open # Για να μη χάνεται η φόρμα
+                # on_change αφαιρέθηκε
             )
             
             new_action_date_str = "" # Default Value
 
-            # 2. Date Input (Εμφανίζεται μόνο αν επιλεγεί το checkbox)
+            # 2. Date Input 
             if show_in_calendar:
                 new_action_date_obj = st.date_input(
                     "Ημερομηνία Ενέργειας (Action Date):", 
                     value=datetime.today().date() + timedelta(days=7), # Προεπιλογή 1 εβδομάδα μετά
                     key="action_date_d1",
-                    on_change=keep_expander_open
+                    # on_change αφαιρέθηκε
                 )
                 new_action_date_str = new_action_date_obj.strftime(DATE_FORMAT)
             
@@ -439,7 +440,7 @@ def data_entry_form(available_schools, logged_in_school, logged_in_userid):
                         new_school, 
                         final_tmima, 
                         logged_in_userid,
-                        new_action_date_str # ΝΕΑ ΤΙΜΗ: ActionDate
+                        new_action_date_str # ActionDate
                     ]
                     submit_entry(new_entry_list)
 
@@ -513,39 +514,7 @@ def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
         )
 
     # --------------------------------------------------------------------------
-    # 3. ΡΥΘΜΙΣΕΙΣ ΗΜΕΡΟΛΟΓΙΟΥ (ΕΚΤΟΣ ΦΟΡΜΑΣ)
-    # --------------------------------------------------------------------------
-    st.markdown("---")
-    st.subheader("Ρυθμίσεις Ημερολογίου")
-    
-    # 1. Checkbox
-    if f'edit_calendar_check_{internal_id}' not in st.session_state:
-        st.session_state[f'edit_calendar_check_{internal_id}'] = is_in_calendar_initial
-
-    show_in_calendar_edit = st.checkbox(
-        "Εμφάνιση στο Ημερολόγιο (ως επικείμενη ενέργεια)",
-        value=st.session_state[f'edit_calendar_check_{internal_id}'],
-        key=f"calendar_check_edit_{internal_id}",
-    )
-    
-    edited_action_date_str = "" # Default Value
-
-    # 2. Date Input (Εμφανίζεται μόνο αν επιλεγεί το checkbox)
-    if show_in_calendar_edit:
-        edited_action_date_obj = st.date_input(
-            "Ημερομηνία Ενέργειας (Action Date):", 
-            value=current_action_date_value, 
-            key=f"action_date_edit_{internal_id}"
-        )
-        edited_action_date_str = edited_action_date_obj.strftime(DATE_FORMAT)
-        
-    # Ενημέρωση της session state για το checkbox
-    st.session_state[f'edit_calendar_check_{internal_id}'] = show_in_calendar_edit
-    
-    st.markdown("---")
-    
-    # --------------------------------------------------------------------------
-    # 4. ΦΟΡΜΑ ΥΠΟΒΟΛΗΣ (ΕΝΤΟΣ ΦΟΡΜΑΣ)
+    # 3. ΦΟΡΜΑ ΥΠΟΒΟΛΗΣ (Περιλαμβάνει πλέον και τα πεδία Ημερολογίου)
     # --------------------------------------------------------------------------
 
     with st.form(f"edit_form_{internal_id}"):
@@ -579,6 +548,37 @@ def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
             value=current_keyword, 
             key=f"edit_keyword_{internal_id}"
         )
+        
+        # --------------------------------------------------------------------------
+        # ΠΕΔΙΑ ΗΜΕΡΟΛΟΓΙΟΥ (ΜΕΣΑ ΣΤΟ FORM)
+        # --------------------------------------------------------------------------
+        st.markdown("---")
+        st.subheader("Ρυθμίσεις Ημερολογίου")
+        
+        # 1. Checkbox
+        if f'edit_calendar_check_{internal_id}' not in st.session_state:
+            st.session_state[f'edit_calendar_check_{internal_id}'] = is_in_calendar_initial
+            
+        show_in_calendar_edit = st.checkbox(
+            "Εμφάνιση στο Ημερολόγιο (ως επικείμενη ενέργεια)",
+            value=st.session_state[f'edit_calendar_check_{internal_id}'],
+            key=f"calendar_check_edit_{internal_id}",
+        )
+        
+        edited_action_date_str = "" # Default Value
+
+        # 2. Date Input 
+        if show_in_calendar_edit:
+            edited_action_date_obj = st.date_input(
+                "Ημερομηνία Ενέργειας (Action Date):", 
+                value=current_action_date_value, 
+                key=f"action_date_edit_{internal_id}"
+            )
+            edited_action_date_str = edited_action_date_obj.strftime(DATE_FORMAT)
+            
+        st.session_state[f'edit_calendar_check_{internal_id}'] = show_in_calendar_edit # Update session state
+        st.markdown("---")
+        # --------------------------------------------------------------------------
 
         # Ημερομηνία Καταχώρησης
         edited_date_obj = st.date_input(
@@ -625,7 +625,7 @@ def edit_entry_form(entry_data: pd.Series, logged_in_school: str):
                     logged_in_school, # Το σχολείο δεν αλλάζει
                     final_edited_tmima_cleaned,  
                     current_userid, # Ο UserId δεν αλλάζει
-                    edited_action_date_str # ΝΕΑ ΤΙΜΗ: ActionDate
+                    edited_action_date_str # ActionDate
                 ]
                 
                 # Καλείται η συνάρτηση update_entry
@@ -926,11 +926,11 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
             today = datetime.now().date()
             future_limit = today + timedelta(days=30)
             
-            # ΝΕΟ ΦΙΛΤΡΟ:
+            # ΦΙΛΤΡΟ:
             # 1. Πρέπει να υπάρχει ActionDate (δεν είναι NaT - Not a Time)
             # 2. Η ActionDate πρέπει να είναι στο μέλλον (από αύριο και για 30 μέρες)
             future_posts = filtered_df[
-                (pd.notna(filtered_df['ActionDate'])) & # ΝΕΟ: Ελέγχει αν έχει οριστεί ημερομηνία ενέργειας
+                (pd.notna(filtered_df['ActionDate'])) & 
                 (filtered_df['ActionDate'].dt.date > today) & 
                 (filtered_df['ActionDate'].dt.date <= future_limit)
             ].copy()
