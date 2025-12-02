@@ -6,8 +6,6 @@ import re
 from typing import List
 from urllib.parse import quote_plus
 import numpy as np 
-# ΝΕΟ: Εισαγωγή του component ημερολογίου
-from streamlit_calendar import calendar
 
 # --------------------------------------------------------------------------------
 # 0. ΡΥΘΜΙΣΕΙΣ (CONNECTION & FORMATS) & CSS
@@ -58,8 +56,6 @@ def apply_custom_css():
             .info-card-text {
                 border-left: 5px solid #F39C12; 
             }
-            /* Αφαιρέθηκε το .calendar-card */
-            
             .card-date {
                 font-size: 0.9em;
                 color: #5D6D7E;
@@ -84,23 +80,21 @@ def apply_custom_css():
             @media (prefers-color-scheme: dark) {
                 .info-card {
                     /* Πιο σκούρο φόντο για να φαίνεται το ανοιχτόχρωμο κείμενο του Dark Mode */
-                    background-color: #1a1a1a; 
-                    box-shadow: 0 4px 8px 0 rgba(255,255,255,0.1); 
+                    background-color: #1a1a1a; /* Σκούρο γκρι/μαύρο */
+                    box-shadow: 0 4px 8px 0 rgba(255,255,255,0.1); /* Λευκή σκιά για Dark Mode */
                 }
-                /* ΔΕΝ ΧΡΕΙΑΖΕΤΑΙ ΤΟ .calendar-card για το component */
-                
                 .card-date, .card-keyword {
                      /* Διατηρούμε το κείμενο ευανάγνωστο στο Dark Mode */
                     color: #999999; 
                 }
                 div.stAlert > div:nth-child(1) {
                     /* Προσαρμογή του warning στο Dark Mode */
-                    background-color: #4b4204 !important; 
-                    color: #FFEB3B !important; 
+                    background-color: #4b4204 !important; /* Πιο σκούρο κίτρινο φόντο */
+                    color: #FFEB3B !important; /* Ανοιχτό κίτρινο κείμενο */
                 }
                 /* Διορθώνουμε το χρώμα του κειμένου μέσα στο link στην αναζήτηση */
                 a {
-                    color: #BBDEFB !important; 
+                    color: #BBDEFB !important; /* Πολύ ανοιχτό μπλε */
                 }
             }
             /* -------------------------------------------------------------------------- */
@@ -151,8 +145,8 @@ def load_data():
         # Καθαρισμός/Επεξεργασία δεδομένων
         df = df.dropna(subset=['Keyword', 'Date', 'School', 'Tmima'], how='any')
         
-        # Εφαρμόζουμε .str.strip() σε όλες τις κρίσιμες string στήλες για ασφάλεια
-        # Διορθώνει το πρόβλημα του UserId που δεν φιλτράρεται σωστά
+        # ΝΕΟ: Εφαρμόζουμε .str.strip() σε όλες τις κρίσιμες string στήλες για ασφάλεια
+        # Αυτό διορθώνει τυχόν κενά που μπορεί να έχουν προστεθεί στις νέες εγγραφές
         string_cols = ['Keyword', 'Info', 'URL', 'Type', 'School', 'Tmima', 'UserId']
         for col in string_cols:
             if col in df.columns:
@@ -257,41 +251,6 @@ def create_search_maps(df):
             tag_to_keyword_map[tag].add(keyword)
             
     return tag_to_keyword_map, keyword_to_data_map
-
-# --------------------------------------------------------------------------------
-# ΝΕΑ: Συνάρτηση μετατροπής DataFrame σε μορφή FullCalendar Events
-# --------------------------------------------------------------------------------
-def create_calendar_events(df: pd.DataFrame) -> List[dict]:
-    """Μετατρέπει τις καταχωρήσεις με ActionDate σε λίστα events για το streamlit-calendar."""
-    events = []
-    
-    # Φιλτράρουμε μόνο τις καταχωρήσεις με έγκυρη ActionDate
-    df_filtered = df[pd.notna(df['ActionDate'])].copy()
-    
-    for _, row in df_filtered.iterrows():
-        # Ημερομηνία έναρξης σε μορφή YYYY-MM-DD
-        start_date_str = row['ActionDate'].strftime('%Y-%m-%d')
-        
-        # Δημιουργία τίτλου
-        title = f"[{row['Tmima']}] {row['Keyword']} - {row['Info']}"
-        
-        # Event dictionary
-        event = {
-            "title": title,
-            "start": start_date_str,
-            "allDay": True,
-            # Προσθέτουμε επιπλέον ιδιότητες για μελλοντική χρήση (π.χ. κλικ σε event)
-            "extendedProps": {
-                "url": row['URL'],
-                "type": row['Type'],
-                "internal_id": row['Internal_ID'],
-                "info": row['Info']
-            }
-        }
-        
-        events.append(event)
-        
-    return events
 
 
 # --------------------------------------------------------------------------------
@@ -744,6 +703,7 @@ def manage_user_posts(df, logged_in_userid):
     
     # Χρησιμοποιούμε τη στήλη 'UserId' για το φιλτράρισμα
     # Το df.get('UserId', '') διασφαλίζει ότι υπάρχει η στήλη.
+    # Το .astype(str).str.strip() έχει γίνει πλέον στη load_data, αλλά το διατηρούμε για διπλό έλεγχο.
     user_posts = df[df.get('UserId', '').astype(str).str.strip() == logged_in_userid].copy()
     logged_in_school = st.session_state.get('logged_in_school') # Χρειαζόμαστε το σχολείο για το edit form
     
@@ -752,7 +712,7 @@ def manage_user_posts(df, logged_in_userid):
         return
 
     st.header("✏️ Διαχείριση Καταχώρησης")
-    st.info(f"Εμφανίζονται οι **{len(user_posts)}** καταχωρήσεις σας. Μπορείτε να τις επεξεργαστείτε ή να τις διαγράψτε.")
+    st.info(f"Εμφανίζονται οι **{len(user_posts)}** καταχωρήσεις σας. Μπορείτε να τις επεξεργαστείτε ή να τις διαγράψετε.")
     
     user_posts = user_posts.sort_values(by='Date', ascending=False)
     
@@ -943,7 +903,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                     keyword = row['Keyword']
                     item_type = row['Type'].strip().lower()
 
-                    # Επιλογή κλάσης CSS βάσει τύπου (χρησιμοποιούμε το info-card)
+                    # Επιλογή κλάσης CSS βάσει τύπου
                     css_class = 'info-card'
                     content = ""
                     
@@ -974,72 +934,72 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                 st.markdown("---")
 
             # ----------------------------------------------------------------------
-            # ΝΕΑ ΕΝΟΤΗΤΑ: ΠΛΗΡΕΣ ΗΜΕΡΟΛΟΓΙΟ (CALENDAR GRID VIEW)
+            # ΕΝΟΤΗΤΑ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ (ΗΜΕΡΟΛΟΓΙΟ)
             # ----------------------------------------------------------------------
             
-            # Φιλτράρισμα μόνο για καταχωρήσεις με ActionDate
-            calendar_df = filtered_df[pd.notna(filtered_df['ActionDate'])].copy()
+            # Υπολογισμός των 30 ημερών από σήμερα
+            today = datetime.now().date()
+            future_limit = today + timedelta(days=30)
+            
+            # ΦΙΛΤΡΟ:
+            # 1. Πρέπει να υπάρχει ActionDate (δεν είναι NaT - Not a Time)
+            # 2. Η ActionDate πρέπει να είναι στο μέλλον (από αύριο και για 30 μέρες)
+            future_posts = filtered_df[
+                (pd.notna(filtered_df['ActionDate'])) & 
+                (filtered_df['ActionDate'].dt.date > today) & 
+                (filtered_df['ActionDate'].dt.date <= future_limit)
+            ].copy()
 
-            if not calendar_df.empty:
-                st.markdown(f"## 📅 Πλήρες Ημερολόγιο Ενεργειών ({selected_tmima})")
-                st.info("Εμφανίζονται όλες οι προγραμματισμένες ενέργειες σε διαδραστική προβολή Ημερολογίου.")
 
-                # Μετατροπή των δεδομένων στην απαιτούμενη μορφή
-                events = create_calendar_events(calendar_df)
-                
-                # Ρυθμίσεις για το FullCalendar (με ελληνικό locale)
-                calendar_options = {
-                    "initialView": "dayGridMonth", # Αρχική προβολή: Μήνας
-                    "headerToolbar": {
-                        # Κουμπιά πλοήγησης και προβολών
-                        "left": "today prev,next",
-                        "center": "title",
-                        "right": "dayGridMonth,timeGridWeek,timeGridDay",
-                    },
-                    "editable": False, # Απενεργοποίηση Drag & Drop
-                    "selectable": True, # Επιτρέπει την επιλογή ημερομηνίας/γεγονότος
-                    "locale": "el", # Ορισμός της γλώσσας σε Ελληνικά
-                    # Προσαρμογή εμφάνισης (χρώμα event)
-                    "eventDidMount": "{ event, element, view } => { element.style.backgroundColor = '#2E86C1'; element.style.borderColor = '#2E86C1'; }",
-                }
-                
-                # Κλήση του component
-                calendar_component_result = calendar(
-                    events=events,
-                    options=calendar_options,
-                    key="full_calendar_view"
-                )
-                
-                # Χειρισμός του αποτελέσματος αν πατηθεί ένα event
-                if calendar_component_result and 'event' in calendar_component_result and calendar_component_result['event']:
-                    st.markdown("---")
-                    st.subheader("Λεπτομέρειες Επιλεγμένου Γεγονότος")
+            if not future_posts.empty:
+                st.markdown(f"## 📅 Προσεχείς Ενέργειες/Γεγονότα ({selected_tmima})")
+                st.info(f"Εμφανίζονται οι καταχωρήσεις που πρέπει να γίνουν μέχρι την {future_limit.strftime(DATE_FORMAT)}.")
+
+                # Ταξινόμηση βάση της ActionDate
+                future_posts = future_posts.sort_values(by='ActionDate', ascending=True)
+
+                for _, row in future_posts.iterrows():
+                    # Χρησιμοποιούμε την ActionDate για την εμφάνιση
+                    date_obj = row['ActionDate'].date() 
+                    date_str = row['ActionDate'].strftime(DATE_FORMAT)
                     
-                    event_data = calendar_component_result['event']
+                    keyword = row['Keyword']
+                    item_type = row['Type'].strip().lower()
+
+                    # Επιλογή κλάσης CSS: Χρησιμοποιούμε μπλε για τις επικείμενες ενέργειες
+                    css_class = 'info-card'
+                    content = ""
                     
-                    title = event_data.get('title', 'N/A')
-                    start_date = event_data.get('start', 'N/A')
-                    # Διαβάζουμε τις custom ιδιότητες
-                    extended_props = event_data.get('extendedProps', {})
-                    url = extended_props.get('url', '')
-                    info = extended_props.get('info', '')
+                    if item_type == 'link':
+                        css_class += ' info-card-link'
+                        link_description = row['Info'].strip()
+                        link_url = row['URL'].strip()
+                        safe_url = quote_plus(link_url, safe=':/') 
+                        content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #1A5276; text-decoration: none;'>{link_description}</a>"
+                    elif item_type == 'text':
+                        css_class += ' info-card-text'
+                        content = f"💬 **Περιγραφή:** {row['Info']}"
+
+                    # Υπολογισμός ημερών που απομένουν για έμφαση
+                    days_remaining = (date_obj - today).days
+                    days_message = f"**Σε {days_remaining} ημέρες**" if days_remaining > 1 else "**ΑΥΡΙΟ!**" if days_remaining == 1 else "**ΣΗΜΕΡΑ!**"
                     
-                    st.markdown(f"**Τίτλος:** `{title.split(']')[0]}]`")
-                    st.markdown(f"**Περιγραφή:** `{info}`")
-                    st.markdown(f"**Ημερομηνία:** {start_date[:10]}") # Κρατάμε μόνο την ημερομηνία
-                    
-                    if url:
-                        safe_url = quote_plus(url, safe=':/')
-                        st.markdown(f"**Σύνδεσμος:** [Άνοιγμα Συνδέσμου]({safe_url})")
-                    else:
-                        st.markdown("**Σύνδεσμος:** Δεν υπάρχει")
-                
+                    # Δόμηση της κάρτας HTML
+                    card_html = f"""
+                    <div class="{css_class}">
+                        <span class="card-date">🗓️ {date_str} ({days_message})</span>
+                        {content}
+                        <div class="card-keyword">🔑 Keyword: {keyword}</div>
+                    </div>
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
+
                 st.markdown("---") 
             else:
-                st.info(f"Δεν υπάρχουν προγραμματισμένες ενέργειες για το τμήμα {selected_tmima}.")
+                st.info(f"Δεν υπάρχουν προγραμματισμένες ενέργειες/γεγονότα για το τμήμα {selected_tmima} τις επόμενες 30 ημέρες.")
                 st.markdown("---")
             # ----------------------------------------------------------------------
-            # ΤΕΛΟΣ: ΠΛΗΡΕΣ ΗΜΕΡΟΛΟΓΙΟ
+            # ΤΕΛΟΣ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ
             # ----------------------------------------------------------------------
 
 
