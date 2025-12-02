@@ -1105,4 +1105,4 @@ else:
     st.info("Παρακαλώ επιλέξτε Σχολείο για να ξεκινήσει η αναζήτηση.")
 
 
-st.caption("Ψηφιακός Βοηθός Τάξης - Steam Project.")
+st.caption("Ψηφιακός Βοηθός Τάξης - Steam Project - nikosn937@gmail.com.")
