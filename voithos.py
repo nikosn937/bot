@@ -56,6 +56,27 @@ def apply_custom_css():
             .info-card-text {
                 border-left: 5px solid #F39C12; 
             }
+            /* ΝΕΟ CSS: Κάρτες Ημερολογίου (Calendar Agenda View) */
+            .calendar-card {
+                position: relative;
+                padding: 15px 15px 15px 30px; /* Προσθήκη padding αριστερά για τη γραμμή */
+                margin-bottom: 15px;
+                border-radius: 8px;
+                box-shadow: 0 4px 8px 0 rgba(0,0,0,0.1);
+                background-color: #EBF5FB; /* Πολύ ανοιχτό μπλε/λευκό */
+            }
+            /* Η κάθετη γραμμή του Calendar/Timeline */
+            .calendar-card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 10px; /* Θέση της γραμμής */
+                bottom: 0;
+                width: 5px; /* Πάχος γραμμής */
+                background-color: #2E86C1; /* Σκούρο μπλε για έμφαση */
+                border-radius: 2px;
+            }
+            
             .card-date {
                 font-size: 0.9em;
                 color: #5D6D7E;
@@ -80,8 +101,13 @@ def apply_custom_css():
             @media (prefers-color-scheme: dark) {
                 .info-card {
                     /* Πιο σκούρο φόντο για να φαίνεται το ανοιχτόχρωμο κείμενο του Dark Mode */
-                    background-color: #1a1a1a; /* Σκούρο γκρι/μαύρο */
-                    box-shadow: 0 4px 8px 0 rgba(255,255,255,0.1); /* Λευκή σκιά για Dark Mode */
+                    background-color: #1a1a1a; 
+                    box-shadow: 0 4px 8px 0 rgba(255,255,255,0.1); 
+                }
+                /* ΝΕΟ: Dark Mode για Calendar Card */
+                .calendar-card {
+                    background-color: #1a1a2e; /* Πολύ σκούρο μπλε/μαύρο */
+                    box-shadow: 0 4px 8px 0 rgba(255,255,255,0.1); 
                 }
                 .card-date, .card-keyword {
                      /* Διατηρούμε το κείμενο ευανάγνωστο στο Dark Mode */
@@ -89,12 +115,12 @@ def apply_custom_css():
                 }
                 div.stAlert > div:nth-child(1) {
                     /* Προσαρμογή του warning στο Dark Mode */
-                    background-color: #4b4204 !important; /* Πιο σκούρο κίτρινο φόντο */
-                    color: #FFEB3B !important; /* Ανοιχτό κίτρινο κείμενο */
+                    background-color: #4b4204 !important; 
+                    color: #FFEB3B !important; 
                 }
                 /* Διορθώνουμε το χρώμα του κειμένου μέσα στο link στην αναζήτηση */
                 a {
-                    color: #BBDEFB !important; /* Πολύ ανοιχτό μπλε */
+                    color: #BBDEFB !important; 
                 }
             }
             /* -------------------------------------------------------------------------- */
@@ -902,7 +928,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                     keyword = row['Keyword']
                     item_type = row['Type'].strip().lower()
 
-                    # Επιλογή κλάσης CSS βάσει τύπου
+                    # Επιλογή κλάσης CSS βάσει τύπου (χρησιμοποιούμε το info-card)
                     css_class = 'info-card'
                     content = ""
                     
@@ -933,7 +959,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                 st.markdown("---")
 
             # ----------------------------------------------------------------------
-            # ΕΝΟΤΗΤΑ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ (ΗΜΕΡΟΛΟΓΙΟ)
+            # ΕΝΟΤΗΤΑ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ (ΗΜΕΡΟΛΟΓΙΟ) - ΝΕΑ ΕΜΦΑΝΙΣΗ
             # ----------------------------------------------------------------------
             
             # Υπολογισμός των 30 ημερών από σήμερα
@@ -952,7 +978,7 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
 
             if not future_posts.empty:
                 st.markdown(f"## 📅 Προσεχείς Ενέργειες/Γεγονότα ({selected_tmima})")
-                st.info(f"Εμφανίζονται οι καταχωρήσεις που πρέπει να γίνουν από σήμερα μέχρι την {future_limit.strftime(DATE_FORMAT)}.")
+                st.info(f"Εμφανίζονται οι καταχωρήσεις που πρέπει να γίνουν από σήμερα μέχρι την {future_limit.strftime(DATE_FORMAT)}. (Agenda View)")
 
                 # ΠΡΟΣΘΗΚΗ: Δημιουργία στήλης με μόνο την ημερομηνία για ομαδοποίηση
                 future_posts['Action_Date_Only'] = future_posts['ActionDate'].dt.date
@@ -983,23 +1009,21 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
 
                     # Εμφάνιση των γεγονότων για αυτήν την ημέρα
                     for _, row in group.iterrows():
-                        # Χρησιμοποιούμε την ActionDate για την εμφάνιση
                         
                         keyword = row['Keyword']
                         item_type = row['Type'].strip().lower()
 
-                        # Επιλογή κλάσης CSS: Χρησιμοποιούμε μπλε για τις επικείμενες ενέργειες
-                        css_class = 'info-card'
+                        # ΝΕΟ: Χρησιμοποιούμε τη calendar-card για Timeline εμφάνιση
+                        css_class = 'calendar-card' 
                         content = ""
                         
                         if item_type == 'link':
-                            css_class += ' info-card-link'
                             link_description = row['Info'].strip()
                             link_url = row['URL'].strip()
                             safe_url = quote_plus(link_url, safe=':/') 
-                            content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #1A5276; text-decoration: none;'>{link_description}</a>"
+                            # Αλλάζουμε το χρώμα του link για να ταιριάζει με το Calendar Card
+                            content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #2E86C1; text-decoration: none;'>{link_description}</a>"
                         elif item_type == 'text':
-                            css_class += ' info-card-text'
                             content = f"💬 **Περιγραφή:** {row['Info']}"
 
                         # Δόμηση της κάρτας HTML (αφαιρούμε την ημερομηνία από την κάρτα, καθώς είναι στην επικεφαλίδα)
@@ -1105,4 +1129,4 @@ else:
     st.info("Παρακαλώ επιλέξτε Σχολείο για να ξεκινήσει η αναζήτηση.")
 
 
-st.caption("Ψηφιακός Βοηθός Τάξης - Steam Project - nikosn937@gmail.com.")
+st.caption("Ψηφιακός Βοηθός Τάξης - Steam Project.")
