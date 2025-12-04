@@ -940,13 +940,15 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
             today = datetime.now().date()
             future_limit = today + timedelta(days=30)
             
+            # ΔΙΟΡΘΩΣΗ: Φιλτράρουμε πρώτα τις έγκυρες ActionDate για να αποφύγουμε TypeError στη σύγκριση
+            valid_action_dates = filtered_df[pd.notna(filtered_df['ActionDate'])].copy()
+
             # ΦΙΛΤΡΟ:
             # 1. Πρέπει να υπάρχει ActionDate (δεν είναι NaT - Not a Time)
             # 2. Η ActionDate πρέπει να είναι στο μέλλον (από σήμερα και για 30 μέρες)
-            future_posts = filtered_df[
-                (pd.notna(filtered_df['ActionDate'])) & 
-                (filtered_df['ActionDate'].dt.date >= today) & 
-                (filtered_df['ActionDate'].dt.date <= future_limit)
+            future_posts = valid_action_dates[
+                (valid_action_dates['ActionDate'].dt.date >= today) & 
+                (valid_action_dates['ActionDate'].dt.date <= future_limit)
             ].copy()
 
 
