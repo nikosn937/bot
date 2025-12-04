@@ -932,92 +932,72 @@ if selected_school and selected_school != "-- Επιλέξτε --" and not full_
                 st.info(f"Δεν υπάρχουν πρόσφατες ανακοινώσεις (τελευταίες 2 ημέρες) για το τμήμα {selected_tmima}.")
                 st.markdown("---")
 
-            # ----------------------------------------------------------------------
-            # ΕΝΟΤΗΤΑ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ (ΗΜΕΡΟΛΟΓΙΟ)
-            # ----------------------------------------------------------------------
+           # ----------------------------------------------------------------------
+# ΕΠΑΝΑΦΟΡΑ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ/ΓΕΓΟΝΟΤΑ (AGENDA/TIMELINE VIEW)
+# ----------------------------------------------------------------------
+
+# Ορίζουμε το χρονικό όριο (30 ημέρες)
+today = datetime.now().date() 
+future_limit = today + timedelta(days=30) 
+
+# Βήμα 1: Ελέγχουμε αν υπάρχει έστω και μία έγκυρη ActionDate στο filtered_df
+# Χρησιμοποιούμε .notna().any() για να ελέγξουμε αν υπάρχει τουλάχιστον μία μη-NaT τιμή.
+has_valid_action_dates = filtered_df['ActionDate'].notna().any()
+
+if has_valid_action_dates:
+    # Βήμα 2: Εάν υπάρχουν έγκυρες ημερομηνίες, προχωρούμε με το ασφαλές φιλτράρισμα
+    upcoming_actions = filtered_df[
+        (filtered_df['ActionDate'].dt.date >= today) & 
+        (filtered_df['ActionDate'].dt.date <= future_limit)
+    ].copy()
+else:
+    # Βήμα 3: Αν δεν υπάρχει καμία έγκυρη ActionDate, δημιουργούμε ένα κενό DataFrame
+    upcoming_actions = pd.DataFrame() 
+
+
+if not upcoming_actions.empty:
+    st.markdown(f"## 🗓️ Προσεχείς Ενέργειες/Γεγονότα ({selected_tmima})")
+    st.info("Εμφανίζονται οι προγραμματισμένες ενέργειες για τις επόμενες 30 ημέρες (Timeline View).")
+
+    # Ομαδοποίηση ανά ημερομηνία και ταξινόμηση
+    upcoming_actions = upcoming_actions.sort_values(by='ActionDate', ascending=True)
+    
+    # Εμφάνιση των γεγονότων
+    for date, group in upcoming_actions.groupby(upcoming_actions['ActionDate'].dt.date):
+        date_str = date.strftime(DATE_FORMAT)
+        
+        # Εμφάνιση Ημερομηνίας ως Header
+        st.subheader(f"➡️ {date_str} ({date.strftime('%A')})")
+        
+        for _, row in group.iterrows():
+            keyword = row['Keyword']
+            info = row['Info'].strip()
+            url = row['URL'].strip()
             
-            # Υπολογισμός των 30 ημερών από σήμερα
-            today = datetime.now().date()
-            future_limit = today + timedelta(days=30)
+            # Δημιουργία περιεχομένου
+            content = f"**{keyword}:** {info}"
             
-            # ΦΙΛΤΡΟ:
-            # 1. Πρέπει να υπάρχει ActionDate (δεν είναι NaT - Not a Time)
-            # 2. Η ActionDate πρέπει να είναι στο μέλλον (από σήμερα και για 30 μέρες)
-            future_posts = filtered_df[
-                (pd.notna(filtered_df['ActionDate'])) & 
-                (filtered_df['ActionDate'].dt.date >= today) & 
-                (filtered_df['ActionDate'].dt.date <= future_limit)
-            ].copy()
+            if url:
+                # Ασφαλής κωδικοποίηση URL
+                safe_url = quote_plus(url, safe=':/')
+                content += f" (Σύνδεσμος: <a href='{safe_url}' target='_blank' style='color: #1A5276; text-decoration: none;'>Άνοιγμα</a>)"
 
+            # Δόμηση της κάρτας HTML με την κλάση .calendar-card
+            card_html = f"""
+            <div class="info-card calendar-card">
+                {content}
+            </div>
+            """
+            st.markdown(card_html, unsafe_allow_html=True)
 
-            if not future_posts.empty:
-                st.markdown(f"## 📅 Προσεχείς Ενέργειες/Γεγονότα ({selected_tmima})")
-                st.info(f"Εμφανίζονται οι καταχωρήσεις που πρέπει να γίνουν από σήμερα μέχρι την {future_limit.strftime(DATE_FORMAT)}.")
+    st.markdown("---") 
+else:
+    st.info(f"Δεν υπάρχουν προγραμματισμένες ενέργειες τις επόμενες 30 ημέρες για το τμήμα {selected_tmima}.")
+    st.markdown("---")
 
-                # ΠΡΟΣΘΗΚΗ: Δημιουργία στήλης με μόνο την ημερομηνία για ομαδοποίηση
-                future_posts['Action_Date_Only'] = future_posts['ActionDate'].dt.date
-                
-                # Ταξινόμηση βάση της ActionDate
-                future_posts = future_posts.sort_values(by='ActionDate', ascending=True)
-
-                # ΝΕΟ: Ομαδοποίηση ανά ημερομηνία
-                grouped_posts = future_posts.groupby('Action_Date_Only')
-
-                for date_only, group in grouped_posts:
-                    # Εμφάνιση της ΗΜΕΡΟΜΗΝΙΑΣ ως επικεφαλίδα
-                    date_str = date_only.strftime(DATE_FORMAT)
-                    
-                    # Υπολογισμός ημερών που απομένουν για έμφαση
-                    days_remaining = (date_only - today).days
-                    days_message = ""
-                    if days_remaining == 0:
-                        days_message = "**ΣΗΜΕΡΑ!**"
-                    elif days_remaining == 1:
-                        days_message = "**ΑΥΡΙΟ!**"
-                    elif days_remaining > 1:
-                        days_message = f"Σε **{days_remaining}** ημέρες"
-                    
-                    # Επικεφαλίδα Ημέρας
-                    st.markdown(f"### 🗓️ {date_str} - {days_message}")
-                    st.markdown('<div style="margin-bottom: 10px; border-bottom: 1px dashed #D6EAF8;"></div>', unsafe_allow_html=True) # Οπτικός διαχωρισμός
-
-                    # Εμφάνιση των γεγονότων για αυτήν την ημέρα
-                    for _, row in group.iterrows():
-                        # Χρησιμοποιούμε την ActionDate για την εμφάνιση
-                        
-                        keyword = row['Keyword']
-                        item_type = row['Type'].strip().lower()
-
-                        # Επιλογή κλάσης CSS: Χρησιμοποιούμε μπλε για τις επικείμενες ενέργειες
-                        css_class = 'info-card'
-                        content = ""
-                        
-                        if item_type == 'link':
-                            css_class += ' info-card-link'
-                            link_description = row['Info'].strip()
-                            link_url = row['URL'].strip()
-                            safe_url = quote_plus(link_url, safe=':/') 
-                            content = f"🔗 **Σύνδεσμος:** <a href='{safe_url}' target='_blank' style='color: #1A5276; text-decoration: none;'>{link_description}</a>"
-                        elif item_type == 'text':
-                            css_class += ' info-card-text'
-                            content = f"💬 **Περιγραφή:** {row['Info']}"
-
-                        # Δόμηση της κάρτας HTML (αφαιρούμε την ημερομηνία από την κάρτα, καθώς είναι στην επικεφαλίδα)
-                        card_html = f"""
-                        <div class="{css_class}">
-                            {content}
-                            <div class="card-keyword">🔑 Keyword: {keyword}</div>
-                        </div>
-                        """
-                        st.markdown(card_html, unsafe_allow_html=True)
-
-                st.markdown("---") 
-            else:
-                st.info(f"Δεν υπάρχουν προγραμματισμένες ενέργειες/γεγονότα για το τμήμα {selected_tmima} τις επόμενες 30 ημέρες.")
-                st.markdown("---")
-            # ----------------------------------------------------------------------
-            # ΤΕΛΟΣ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ
-            # ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# ΤΕΛΟΣ: ΠΡΟΣΕΧΕΙΣ ΕΝΕΡΓΕΙΕΣ/ΓΕΓΟΝΟΤΑ
+# ----------------------------------------------------------------------
 
 
             st.markdown("## 🔍 Αναζήτηση Παλαιότερων Πληροφοριών")
